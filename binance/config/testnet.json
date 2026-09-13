@@ -1,0 +1,36 @@
+{
+    "version": 1,
+    "connectors": {
+          "binance": {
+              "type": "binance",
+
+              "marketData":
+              {
+                  "transport": "websocket",
+                  "host": "testnet-stream.binance.com",
+                  "port": 9443,
+
+                  "channels": [
+                      "depth",
+                      "trades"
+                  ]
+              },
+
+              "orderEntry": {
+                  "transport": "https",
+                  "host": "testnet-api.binance.com",
+                  "port": 443
+              },
+
+              "credentials": {
+                  "apiKey": "${BINANCE_TESTNET_API_KEY}",
+                  "secret": "${BINANCE_TESTNET_API_SECRET}"
+              },
+
+              "instruments": [
+                "BTCUSDT",
+                "ETHUSDT"
+              ]
+        }
+    }
+}
