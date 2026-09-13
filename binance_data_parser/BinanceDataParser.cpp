@@ -1,13 +1,13 @@
 /**============================================================================
-Name        : binance_market_data_parser.cpp
+Name        : BinanceDataParser.cpp
 Created on  : 12.09.2026
 Author      : Andrei Tokmakov
 Version     : 1.0
 Copyright   : Your copyright notice
-Description : binance_market_data_parser.cpp
+Description : BinanceDataParser
 ============================================================================**/
 
-#include "binance_market_data_parser.hpp"
+#include "BinanceDataParser.hpp"
 
 #include <simdjson.h>
 
@@ -63,10 +63,10 @@ namespace
     }
 }
 
-namespace exchange::binance
+namespace binance
 {
     DepthSnapshot
-    BinanceMarketDataParser::parseDepthSnapshot(const std::string_view message)
+    BinanceDataParser::parseDepthSnapshot(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document = parser.parse(message.data(), message.size());
@@ -94,7 +94,7 @@ namespace exchange::binance
     }
 
     DepthUpdate
-    BinanceMarketDataParser::parseDepthUpdate(const std::string_view message)
+    BinanceDataParser::parseDepthUpdate(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document = parser.parse(message.data(), message.size());
@@ -125,7 +125,7 @@ namespace exchange::binance
     }
 
     Trade
-    BinanceMarketDataParser::parseTrade(const std::string_view message)
+    BinanceDataParser::parseTrade(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document = parser.parse(message.data(), message.size());
@@ -144,7 +144,7 @@ namespace exchange::binance
     }
 
     AggregateTrade
-    BinanceMarketDataParser::parseAggregateTrade(const std::string_view message)
+    BinanceDataParser::parseAggregateTrade(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document = parser.parse(message.data(), message.size());
@@ -165,7 +165,7 @@ namespace exchange::binance
     }
 
     BookTicker
-    BinanceMarketDataParser::parseBookTicker(const std::string_view message)
+    BinanceDataParser::parseBookTicker(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document = parser.parse(message.data(), message.size());
@@ -183,7 +183,7 @@ namespace exchange::binance
     }
 
     Kline
-    BinanceMarketDataParser::parseKline(const std::string_view message)
+    BinanceDataParser::parseKline(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document =
@@ -214,7 +214,7 @@ namespace exchange::binance
     }
 
     Ticker
-    BinanceMarketDataParser::parseTicker(const std::string_view message)
+    BinanceDataParser::parseTicker(const std::string_view message)
     {
         simdjson::dom::parser parser;
         const simdjson::dom::element document =parser.parse(message.data(), message.size());
@@ -249,10 +249,10 @@ namespace exchange::binance
         return ticker;
     }
 
-    market_data::MarketUpdate
-    BinanceMarketDataParser::normalize(const DepthUpdate& update)
+    MarketUpdate
+    BinanceDataParser::normalize(const DepthUpdate& update)
     {
-        market_data::MarketUpdate result;
+        MarketUpdate result;
 
         result.firstUpdateId = update.firstUpdateId;
         result.lastUpdateId = update.lastUpdateId;
@@ -269,11 +269,11 @@ namespace exchange::binance
         return result;
     }
 
-    Price BinanceMarketDataParser::parsePrice(const std::string_view value) {
+    Price BinanceDataParser::parsePrice(const std::string_view value) {
         return parseDecimal(value);
     }
 
-    Quantity BinanceMarketDataParser::parseQuantity(const std::string_view value) {
+    Quantity BinanceDataParser::parseQuantity(const std::string_view value) {
         return parseDecimal(value);
     }
 }

@@ -29,6 +29,7 @@ Description : Binance
 
 #include "binance_web_socket_client.hpp"
 #include "binance_market_data_parser.hpp"
+#include "binance_rest_client.hpp"
 
 namespace
 {
@@ -114,6 +115,26 @@ namespace
         webSocket.send(subscriptionDepth);
         ioContext.run();
     }
+
+    void apiClientTest()
+    {
+        using namespace exchange::binance;
+
+        BinanceRestClient restClient { "testnet.binance.vision" };
+
+        const std::expected<DepthSnapshot, RestError> result = restClient.getDepthSnapshot("BTCUSDT", 1000);
+        if (!result)
+        {
+            std::cerr << "Failed to get Binance depth snapshot: "<< static_cast<int>(result.error())<< '\n';
+            return;
+        }
+
+        const DepthSnapshot& snapshot = *result;
+
+        std::cout << "Last update ID: " << snapshot.lastUpdateId << '\n';
+        std::cout << "Bids: " << snapshot.bids.size() << '\n';
+        std::cout << "Asks: " << snapshot.asks.size()<< '\n';
+    }
 }
 
 
@@ -122,8 +143,9 @@ int main([[maybe_unused]] int argc,
 {
     const std::vector<std::string_view> args(argv + 1, argv + argc);
 
-    configTest();
+    // configTest();
     // wsTest();
+    apiClientTest();
 
     return EXIT_SUCCESS;
 }

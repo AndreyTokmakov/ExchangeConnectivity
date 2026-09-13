@@ -1,23 +1,22 @@
 /**============================================================================
-Name        : binance_market_data_parser.hpp
+Name        : BinanceDataParser.hpp
 Created on  : 12.09.2026
 Author      : Andrei Tokmakov
 Version     : 1.0
 Copyright   : Your copyright notice
-Description : binance_market_data_parser.hpp
+Description : BinanceDataParser
 ============================================================================**/
 
-#ifndef EXCHANGECONNECTIVITY_BINANCE_MARKET_DATA_PARSER_HPP
-#define EXCHANGECONNECTIVITY_BINANCE_MARKET_DATA_PARSER_HPP
+#ifndef EXCHANGECONNECTIVITY_BINANCE_DATA_PARSER_HPP
+#define EXCHANGECONNECTIVITY_BINANCE_DATA_PARSER_HPP
 
-#include "binance_types.hpp"
-#include "market_update.hpp"
+#include "MarketData.hpp"
 
 #include <string_view>
 
-namespace exchange::binance
+namespace binance
 {
-    class BinanceMarketDataParser
+    class BinanceDataParser
     {
     public:
         [[nodiscard]]
@@ -42,7 +41,7 @@ namespace exchange::binance
         static Ticker parseTicker(std::string_view message);
 
         [[nodiscard]]
-        static market_data::MarketUpdate normalize(const DepthUpdate& update);
+        static MarketUpdate normalize(const DepthUpdate& update);
 
         [[nodiscard]]
         static Price parsePrice(std::string_view value);
@@ -52,4 +51,4 @@ namespace exchange::binance
     };
 }
 
-#endif //EXCHANGECONNECTIVITY_BINANCE_MARKET_DATA_PARSER_HPP
+#endif //EXCHANGECONNECTIVITY_BINANCE_DATA_PARSER_HPP

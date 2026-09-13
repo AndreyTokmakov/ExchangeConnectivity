@@ -1,29 +1,44 @@
 /**============================================================================
-Name        : binance_types.hpp
+Name        : MarketData.hpp
 Created on  : 12.09.2026
 Author      : Andrei Tokmakov
 Version     : 1.0
 Copyright   : Your copyright notice
-Description : binance_types.hpp
+Description : MarketData.hpp
 ============================================================================**/
 
 #ifndef EXCHANGECONNECTIVITY_BINANCE_TYPES_HPP
 #define EXCHANGECONNECTIVITY_BINANCE_TYPES_HPP
 
-#include "market_update.hpp"
-
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <map>
 
-namespace exchange::binance
+namespace binance
 {
-
-    using Price = market_data::Price;
-    using Quantity = market_data::Quantity;
-    using SequenceNumber = market_data::SequenceNumber;
-    using Timestamp = market_data::Timestamp;
+    using Price = std::int64_t;
+    using Quantity = std::int64_t;
+    using SequenceNumber = std::uint64_t;
+    using Timestamp = std::uint64_t;
     using TradeId = std::uint64_t;
+
+    struct PriceLevelUpdate
+    {
+        Price price {};
+        Quantity quantity {};
+    };
+
+    struct MarketUpdate
+    {
+        SequenceNumber firstUpdateId {};
+        SequenceNumber lastUpdateId {};
+        Timestamp exchangeTimestamp {};
+
+        std::vector<PriceLevelUpdate> bids;
+        std::vector<PriceLevelUpdate> asks;
+    };
+
 
     using OrderBookLevels = std::map<Price, Quantity>;
 
