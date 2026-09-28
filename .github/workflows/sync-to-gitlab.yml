@@ -1,0 +1,27 @@
+name: Sync to GitLab
+
+on:
+  push:
+    branches: [ main, master ] # Синхронизация при пуше в эти ветки
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Забираем всю историю для полного зеркалирования
+
+      - name: Push to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_PAT }}
+          GITLAB_REPO: ${{ secrets.GITLAB_URL }}
+        run: |
+          # Настраиваем git с токеном для аутентификации
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@${GITLAB_REPO#https://}"
+          
+          # Зеркалируем все ветки и теги в GitLab
+          # git push --mirror gitlab --force
+          git push --all --force gitlab
+          git push --tags --force gitlab
