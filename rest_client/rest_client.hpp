@@ -61,7 +61,7 @@ namespace networking
     public:
         static constexpr std::string_view UserAgent = "hft-trading-client/1.0";
 
-        explicit RestClient(std::string host, std::string port = "443");
+        explicit RestClient(std::string host, uint16_t port = 443);
 
         [[nodiscard]]
         std::expected<HttpResponse, RestFailure>
@@ -72,7 +72,7 @@ namespace networking
 
     private:
         std::string host;
-        std::string port;
+        std::string port { 0 };
 
         asio::io_context ioContext;
         asio::ssl::context sslContext;

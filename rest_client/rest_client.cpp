@@ -34,8 +34,8 @@ namespace
 
     [[nodiscard]]
     std::unexpected<RestFailure> makeRestFailure(const RestError error,
-                                                 const boost::system::error_code &systemError = {},
-                                                 const unsigned long sslError = 0)
+                                                 const boost::system::error_code& systemError = {},
+                                                 const uint64_t sslError = 0)
     {
         return std::unexpected(RestFailure {
             .error = error,
@@ -66,9 +66,9 @@ namespace
 namespace networking
 {
 
-    RestClient::RestClient(std::string host, std::string port):
+    RestClient::RestClient(std::string host, uint16_t port):
         host { std::move(host) },
-        port { std::move(port) },
+        port { std::to_string(port) },
         sslContext { ssl::context::tls_client },
         resolver { ioContext }
     {
@@ -124,7 +124,9 @@ namespace networking
             request.set(beast::string_view { name }, beast::string_view { value });
         }
 
-        request.body().assign(body.data(), body.size());
+        if (!body.empty()) {
+            request.body().assign(body.data(), body.size());
+        }
         request.prepare_payload();
         request.keep_alive(false);
 
