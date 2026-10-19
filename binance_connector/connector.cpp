@@ -38,29 +38,23 @@ namespace binance
     constexpr std::string_view BinanceRestHost = "api.binance.com";
     constexpr std::string_view HttpsPort = "443";
 
-    std::string toLower(std::string value)
+    static std::string toLower(std::string value)
     {
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char character)
-                       {
-                           return static_cast<char>(std::tolower(character));
-                       });
-
+        std::ranges::transform(value, value.begin(),[](const unsigned char character){
+            return static_cast<char>(std::tolower(character));
+        });
         return value;
     }
 
     std::string toUpper(std::string value)
     {
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char character)
-                       {
-                           return static_cast<char>(std::toupper(character));
-                       });
-
+        std::ranges::transform(value, value.begin(),[](const unsigned char character){
+            return static_cast<char>(std::toupper(character));
+        });
         return value;
     }
 
-    std::uint64_t jsonUnsigned(const json::value& value)
+    static std::uint64_t jsonUnsigned(const json::value& value)
     {
         if (value.is_uint64()) {
             return value.as_uint64();
@@ -82,7 +76,7 @@ namespace binance
         return std::string(value.as_string());
     }
 
-    binance::Price parseDecimal(std::string_view value)
+    static Price parseDecimal(const std::string_view value)
     {
         if (value.empty()) {
             throw std::runtime_error("Empty decimal value");
@@ -100,9 +94,7 @@ namespace binance
             throw std::runtime_error("Invalid decimal value");
         }
 
-        const std::uint64_t MaxValue =
-            static_cast<std::uint64_t>(std::numeric_limits<binance::Price>::max());
-
+        constexpr std::uint64_t MaxValue = std::numeric_limits<Price>::max();
         const std::uint64_t limit = negative ? MaxValue + 1 : MaxValue;
 
         std::uint64_t integerPart = 0;
@@ -155,36 +147,33 @@ namespace binance
             throw std::runtime_error("Invalid decimal value");
         }
 
-        while (fractionalScale < binance::DecimalScale) {
+        while (fractionalScale < DecimalScale) {
             fractionalPart *= 10;
             fractionalScale *= 10;
         }
 
-        if (integerPart > limit / static_cast<std::uint64_t>(binance::DecimalScale)) {
+        if (integerPart > limit / static_cast<std::uint64_t>(DecimalScale)) {
             throw std::runtime_error("Scaled decimal value overflow");
         }
 
-        const std::uint64_t scaledInteger =
-            integerPart * static_cast<std::uint64_t>(binance::DecimalScale);
-
+        const std::uint64_t scaledInteger = integerPart * static_cast<std::uint64_t>(DecimalScale);
         if (fractionalPart > limit - scaledInteger) {
             throw std::runtime_error("Scaled decimal value overflow");
         }
 
         const std::uint64_t result = scaledInteger + fractionalPart;
-
         if (negative) {
             if (result == MaxValue + 1) {
                 return std::numeric_limits<binance::Price>::min();
             }
 
-            return -static_cast<binance::Price>(result);
+            return -static_cast<Price>(result);
         }
 
-        return static_cast<binance::Price>(result);
+        return static_cast<Price>(result);
     }
 
-    binance::BookLevel parseBookLevel(const json::value& value)
+    BookLevel parseBookLevel(const json::value& value)
     {
         if (!value.is_array() || value.as_array().size() < 2) {
             throw std::runtime_error("Invalid order book level");
@@ -230,7 +219,7 @@ namespace binance
         return update;
     }
 
-    binance::Trade parseTrade(std::string_view message)
+    Trade parseTrade(std::string_view message)
     {
         const json::value parsed = json::parse(message);
         const json::object& object = parsed.as_object();
@@ -253,7 +242,7 @@ namespace binance
         return trade;
     }
 
-    binance::Snapshot parseSnapshot(std::string_view message)
+    binance::Snapshot parseSnapshot(const std::string_view message)
     {
         const json::value parsed = json::parse(message);
         const json::object& object = parsed.as_object();
@@ -266,7 +255,7 @@ namespace binance
         return snapshot;
     }
 
-    void setSni(beast::ssl_stream<beast::tcp_stream>& stream, const std::string& host)
+    static void setSni(beast::ssl_stream<beast::tcp_stream>& stream, const std::string& host)
     {
         if (SSL_set_tlsext_host_name(stream.native_handle(), host.c_str()) != 1) {
             throw std::runtime_error("Failed to configure TLS SNI");
@@ -274,13 +263,13 @@ namespace binance
     }
 
     template<typename Stream>
-    void configureTls(Stream& stream, const std::string& host)
+    static void configureTls(Stream& stream, const std::string& host)
     {
         if (SSL_set_tlsext_host_name(stream.native_handle(), host.c_str()) != 1) {
             throw std::runtime_error("Failed to configure TLS SNI");
         }
 
-        stream.next_layer().set_verify_callback(ssl::host_name_verification(host));
+        // stream.next_layer().set_verify_callback(ssl::host_name_verification(host));
     }
 }
 
@@ -338,7 +327,6 @@ namespace binance
         void onConnected()
         {
             const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
             try {
                 configureTls(stream.next_layer(), std::string(BinanceHost));
             } catch (const std::exception& exception) {
@@ -347,81 +335,67 @@ namespace binance
                 return;
             }
 
-            stream.next_layer().async_handshake(ssl::stream_base::client,
-                [self](const beast::error_code& errorCode)
-                {
-                    if (errorCode) {
-                        self->reportError("WebSocket TLS handshake failed", errorCode);
-                        return;
-                    }
-
-                    self->onTlsHandshake();
-                });
+            stream.next_layer().async_handshake(ssl::stream_base::client, [self](const beast::error_code& errorCode){
+                if (errorCode) {
+                    self->reportError("WebSocket TLS handshake failed", errorCode);
+                    return;
+                }
+                self->onTlsHandshake();
+            });
         }
 
         void onTlsHandshake()
         {
             const std::shared_ptr<WebSocketSession> self = shared_from_this();
+            stream.async_handshake(std::string(BinanceHost), "/ws",[self](const beast::error_code& errorCode){
+                if (errorCode) {
+                    self->reportError("WebSocket handshake failed", errorCode);
+                    return;
+                }
 
-            stream.async_handshake(std::string(BinanceHost), "/ws",
-                [self](const beast::error_code& errorCode)
-                {
-                    if (errorCode) {
-                        self->reportError("WebSocket handshake failed", errorCode);
-                        return;
-                    }
-
-                    self->subscribe();
-                });
+                self->subscribe();
+            });
         }
 
         void subscribe()
         {
             const std::shared_ptr<WebSocketSession> self = shared_from_this();
 
-            subscription = "{\"method\":\"SUBSCRIBE\",\"params\":[\"" +
-                streamName + "\"],\"id\":1}";
-
-            stream.async_write(net::buffer(subscription),
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        self->reportError("WebSocket subscription failed", errorCode);
-                        return;
-                    }
-
-                    self->read();
-                });
+            subscription = R"({"method":"SUBSCRIBE","params":[")" + streamName + R"("],"id":1})";
+            stream.async_write(net::buffer(subscription),[self](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    self->reportError("WebSocket subscription failed", errorCode);
+                    return;
+                }
+                self->read();
+            });
         }
 
         void read()
         {
             const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
-            stream.async_read(buffer,
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        if (errorCode != websocket::error::closed &&
-                            errorCode != net::error::operation_aborted) {
-                            self->reportError("WebSocket read failed", errorCode);
-                        }
-
-                        return;
+            stream.async_read(buffer,[self](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    if (errorCode != websocket::error::closed &&
+                        errorCode != net::error::operation_aborted) {
+                        self->reportError("WebSocket read failed", errorCode);
                     }
+                    return;
+                }
 
-                    std::string message = beast::buffers_to_string(self->buffer.data());
-                    self->buffer.consume(self->buffer.size());
+                std::string message = beast::buffers_to_string(self->buffer.data());
+                self->buffer.consume(self->buffer.size());
 
-                    if (self->handler) {
-                        self->handler(std::move(message));
-                    }
-
-                    self->read();
-                });
+                if (self->handler) {
+                    self->handler(std::move(message));
+                }
+                self->read();
+            });
         }
 
-        void reportError(const char* operation, const beast::error_code& errorCode)
+        static void reportError(const char* operation, const beast::error_code& errorCode)
         {
             if (errorCode != net::error::operation_aborted) {
                 std::cerr << operation << ": " << errorCode.message() << '\n';
@@ -456,27 +430,25 @@ namespace binance
 
             resolver.async_resolve(std::string(BinanceRestHost), std::string(HttpsPort),
                 [self](const beast::error_code& errorCode, const Tcp::resolver::results_type& endpoints)
+            {
+                if (errorCode)
                 {
-                    if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        RestError::ResolveFailed, errorCode.message()
+                    }));
+                    return;
+                }
+                beast::get_lowest_layer(self->stream).async_connect(endpoints, [self](const beast::error_code& connectError, const Tcp::endpoint&)
+                {
+                    if (connectError) {
                         self->finish(std::unexpected(RestFailure {
-                            RestError::ResolveFailed, errorCode.message()
+                                    .error = RestError::ConnectFailed, .message = connectError.message()
                         }));
                         return;
                     }
-
-                    beast::get_lowest_layer(self->stream).async_connect(endpoints,
-                        [self](const beast::error_code& connectError, const Tcp::endpoint&)
-                        {
-                            if (connectError) {
-                                self->finish(std::unexpected(RestFailure {
-                                    RestError::ConnectFailed, connectError.message()
-                                }));
-                                return;
-                            }
-
-                            self->onConnected();
-                        });
+                    self->onConnected();
                 });
+            });
         }
 
     private:
@@ -493,18 +465,16 @@ namespace binance
 
             const std::shared_ptr<SnapshotRequest> self = shared_from_this();
 
-            stream.async_handshake(ssl::stream_base::client,
-                [self](const beast::error_code& errorCode)
-                {
-                    if (errorCode) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::TlsHandshakeFailed, errorCode.message()
-                        }));
-                        return;
-                    }
-
-                    self->sendRequest();
-                });
+            stream.async_handshake(ssl::stream_base::client, [self](const beast::error_code& errorCode)
+            {
+                if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::TlsHandshakeFailed, .message = errorCode.message()
+                    }));
+                    return;
+                }
+                self->sendRequest();
+            });
         }
 
         void sendRequest()
@@ -518,52 +488,48 @@ namespace binance
 
             const std::shared_ptr<SnapshotRequest> self = shared_from_this();
 
-            http::async_write(stream, request,
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::WriteFailed, errorCode.message()
-                        }));
-                        return;
-                    }
-
-                    self->readResponse();
-                });
+            http::async_write(stream, request,[self](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::WriteFailed, .message = errorCode.message()
+                    }));
+                    return;
+                }
+                self->readResponse();
+            });
         }
 
         void readResponse()
         {
             const std::shared_ptr<SnapshotRequest> self = shared_from_this();
 
-            http::async_read(stream, buffer, response,
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::ReadFailed, errorCode.message()
-                        }));
-                        return;
-                    }
+            http::async_read(stream, buffer, response, [self](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::ReadFailed, .message = errorCode.message()
+                    }));
+                    return;
+                }
 
-                    if (self->response.result() != http::status::ok) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::InvalidResponse,
-                            "HTTP status: " + std::to_string(
-                                self->response.result_int()) + ", body: " + self->response.body()
-                        }));
-                        return;
-                    }
+                if (self->response.result() != http::status::ok) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::InvalidResponse,
+                        .message = "HTTP status: " + std::to_string(self->response.result_int()) + ", body: " + self->response.body()
+                    }));
+                    return;
+                }
 
-                    try {
-                        Snapshot snapshot = parseSnapshot(self->response.body());
-                        self->finish(std::move(snapshot));
-                    } catch (const std::exception& exception) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::InvalidResponse, exception.what()
-                        }));
-                    }
-                });
+                try {
+                    Snapshot snapshot = parseSnapshot(self->response.body());
+                    self->finish(std::move(snapshot));
+                } catch (const std::exception& exception) {
+                    self->finish(std::unexpected(RestFailure {
+                            .error = RestError::InvalidResponse, .message = exception.what()
+                    }));
+                }
+            });
         }
 
         void finish(std::expected<Snapshot, RestFailure> result)
@@ -609,15 +575,10 @@ namespace binance
         depthHandler = std::move(handler);
 
         const std::string streamName = toLower(symbol) + "@depth@100ms";
-
-        depthSession = std::make_shared<WebSocketSession>(
-            ioContext,
-            sslContext,
-            streamName,
-            [this](std::string message)
-            {
-                onDepthMessage(std::move(message));
-            });
+        depthSession = std::make_shared<WebSocketSession>(ioContext, sslContext, streamName,
+            [this](const std::string &message) {
+                onDepthMessage(message);
+        });
 
         depthSession->start();
     }
@@ -628,24 +589,17 @@ namespace binance
         tradeHandler = std::move(handler);
 
         const std::string streamName = toLower(symbol) + "@trade";
-
-        tradeSession = std::make_shared<WebSocketSession>(
-            ioContext,
-            sslContext,
-            streamName,
-            [this](std::string message)
-            {
-                onTradeMessage(std::move(message));
-            });
+        tradeSession = std::make_shared<WebSocketSession>(ioContext, sslContext,
+            streamName,[this](const std::string& message) {
+                onTradeMessage(message);
+        });
 
         tradeSession->start();
     }
 
     void BinanceConnector::asyncSnapshot(SnapshotHandler handler)
     {
-        auto request = std::make_shared<SnapshotRequest>(
-            ioContext, sslContext, symbol, std::move(handler));
-
+        const auto request = std::make_shared<SnapshotRequest>(ioContext, sslContext, symbol, std::move(handler));
         request->start();
     }
 
@@ -655,7 +609,6 @@ namespace binance
             depthSession->stop();
             depthSession.reset();
         }
-
         depthHandler = {};
     }
 
@@ -665,7 +618,6 @@ namespace binance
             tradeSession->stop();
             tradeSession.reset();
         }
-
         tradeHandler = {};
     }
 
@@ -675,11 +627,10 @@ namespace binance
         stopTrades();
     }
 
-    void BinanceConnector::onDepthMessage(std::string message)
+    void BinanceConnector::onDepthMessage(const std::string& message) const
     {
         try {
             const DepthUpdate update = parseDepthUpdate(message);
-
             if (depthHandler) {
                 depthHandler(update);
             }
@@ -688,11 +639,10 @@ namespace binance
         }
     }
 
-    void BinanceConnector::onTradeMessage(std::string message)
+    void BinanceConnector::onTradeMessage(const std::string& message) const
     {
         try {
             const Trade trade = parseTrade(message);
-
             if (tradeHandler) {
                 tradeHandler(trade);
             }

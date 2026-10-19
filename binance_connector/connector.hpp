@@ -99,8 +99,8 @@ namespace binance
         void stop();
 
     private:
-        void onDepthMessage(std::string message);
-        void onTradeMessage(std::string message);
+        void onDepthMessage(const std::string& message) const;
+        void onTradeMessage(const std::string& message) const;
 
         boost::asio::io_context& ioContext;
         boost::asio::ssl::context sslContext;
