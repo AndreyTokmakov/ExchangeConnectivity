@@ -19,6 +19,7 @@ else()
 endif()
 
 add_subdirectory(binance)
+add_subdirectory(binance_connector)
 add_subdirectory(binance_data_parser)
 add_subdirectory(configuration)
 add_subdirectory(rest_client)
