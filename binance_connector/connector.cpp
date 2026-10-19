@@ -187,7 +187,7 @@ namespace binance
         };
     }
 
-    std::vector<binance::BookLevel> parseLevels(const json::value& value)
+    std::vector<BookLevel> parseLevels(const json::value& value)
     {
         if (!value.is_array()) {
             throw std::runtime_error("Expected an array of order book levels");
@@ -204,7 +204,7 @@ namespace binance
         return levels;
     }
 
-    binance::DepthUpdate parseDepthUpdate(std::string_view message)
+    static DepthUpdate parseDepthUpdate(const std::string_view message)
     {
         const json::value parsed = json::parse(message);
         const json::object& object = parsed.as_object();
@@ -219,7 +219,7 @@ namespace binance
         return update;
     }
 
-    Trade parseTrade(std::string_view message)
+    static Trade parseTrade(const std::string_view message)
     {
         const json::value parsed = json::parse(message);
         const json::object& object = parsed.as_object();
@@ -299,7 +299,7 @@ namespace binance
                 [self](const beast::error_code& errorCode, const Tcp::resolver::results_type& endpoints)
                 {
                     if (errorCode) {
-                        self->reportError("WebSocket resolve failed", errorCode);
+                        reportError("WebSocket resolve failed", errorCode);
                         return;
                     }
 
@@ -307,7 +307,7 @@ namespace binance
                         [self](const beast::error_code& connectError, const Tcp::endpoint&)
                         {
                             if (connectError) {
-                                self->reportError("WebSocket connect failed", connectError);
+                                reportError("WebSocket connect failed", connectError);
                                 return;
                             }
 
@@ -337,7 +337,7 @@ namespace binance
 
             stream.next_layer().async_handshake(ssl::stream_base::client, [self](const beast::error_code& errorCode){
                 if (errorCode) {
-                    self->reportError("WebSocket TLS handshake failed", errorCode);
+                    reportError("WebSocket TLS handshake failed", errorCode);
                     return;
                 }
                 self->onTlsHandshake();
@@ -349,7 +349,7 @@ namespace binance
             const std::shared_ptr<WebSocketSession> self = shared_from_this();
             stream.async_handshake(std::string(BinanceHost), "/ws",[self](const beast::error_code& errorCode){
                 if (errorCode) {
-                    self->reportError("WebSocket handshake failed", errorCode);
+                    reportError("WebSocket handshake failed", errorCode);
                     return;
                 }
 
@@ -365,7 +365,7 @@ namespace binance
             stream.async_write(net::buffer(subscription),[self](const beast::error_code& errorCode, std::size_t)
             {
                 if (errorCode) {
-                    self->reportError("WebSocket subscription failed", errorCode);
+                    reportError("WebSocket subscription failed", errorCode);
                     return;
                 }
                 self->read();
@@ -378,9 +378,8 @@ namespace binance
             stream.async_read(buffer,[self](const beast::error_code& errorCode, std::size_t)
             {
                 if (errorCode) {
-                    if (errorCode != websocket::error::closed &&
-                        errorCode != net::error::operation_aborted) {
-                        self->reportError("WebSocket read failed", errorCode);
+                    if (errorCode != websocket::error::closed && errorCode != net::error::operation_aborted) {
+                        reportError("WebSocket read failed", errorCode);
                     }
                     return;
                 }
