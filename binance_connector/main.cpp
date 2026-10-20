@@ -23,8 +23,7 @@ int main([[maybe_unused]] const int argc,
     connector.startDepth([&depthUpdateCount](const binance::DepthUpdate& update)
     {
         ++depthUpdateCount;
-
-        std::cout << "Depth update:"
+        std::cout << "Depth:"
                   << " firstUpdateId=" << update.firstUpdateId
                   << ", lastUpdateId=" << update.lastUpdateId
                   << ", bids=" << update.bids.size()
@@ -35,22 +34,16 @@ int main([[maybe_unused]] const int argc,
     connector.startTrades([&tradeCount](const binance::Trade& trade)
     {
         ++tradeCount;
-
         std::cout << "Trade:"
-                  << " sequence=" << trade.sequence
+                  << " id=" << trade.sequence
                   << ", price=" << static_cast<double>(trade.price) / binance::DecimalScale
                   << ", quantity="
                   << static_cast<double>(trade.quantity) / binance::DecimalScale
-                  << ", side="
-                  << (trade.side == binance::Side::Buy ? "Buy" : "Sell")
+                  << ", side=" << (trade.side == binance::Side::Buy ? "Buy" : "Sell")
                   << '\n';
     });
 
-    boost::asio::steady_timer snapshotTimer {
-        ioContext,
-        std::chrono::seconds { 10 }
-    };
-
+    boost::asio::steady_timer snapshotTimer { ioContext, std::chrono::seconds { 10 } };
     snapshotTimer.async_wait([&connector](const boost::system::error_code& errorCode)
     {
         if (errorCode) {
@@ -60,12 +53,10 @@ int main([[maybe_unused]] const int argc,
         connector.asyncSnapshot([](std::expected<binance::Snapshot, binance::RestFailure> result)
         {
             if (!result) {
-                std::cerr << "Snapshot request failed: "
-                          << result.error().message << '\n';
+                std::cerr << "Snapshot failed: " << result.error().message << '\n';
                 return;
             }
-
-            std::cout << "Snapshot received:"
+            std::cout << "Snapshot:"
                       << " lastUpdateId=" << result->lastUpdateId
                       << ", bids=" << result->bids.size()
                       << ", asks=" << result->asks.size()
@@ -73,10 +64,7 @@ int main([[maybe_unused]] const int argc,
         });
     });
 
-    boost::asio::steady_timer stopTimer {
-        ioContext,
-        std::chrono::seconds { 30 }
-    };
+    boost::asio::steady_timer stopTimer { ioContext, std::chrono::seconds { 30 } };
 
     stopTimer.async_wait([&connector](const boost::system::error_code& errorCode)
     {
@@ -89,6 +77,7 @@ int main([[maybe_unused]] const int argc,
 
     std::cout << "Depth updates received: " << depthUpdateCount << '\n';
     std::cout << "Trades received: " << tradeCount << '\n';
+
 
     return EXIT_SUCCESS;
 }

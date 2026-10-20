@@ -16,6 +16,7 @@ Description : rest_client.hpp
 #include <boost/beast/http.hpp>
 
 #include <expected>
+#include <map>
 #include <string>
 
 namespace networking
