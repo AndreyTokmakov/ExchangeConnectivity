@@ -17,7 +17,7 @@ Description : websocket_client.hpp
 #include <memory>
 #include <string>
 
-namespace binance
+namespace networking
 {
     class WebSocketSession;
 

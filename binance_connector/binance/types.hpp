@@ -30,22 +30,6 @@ namespace binance
         Sell
     };
 
-    enum class RestError : std::uint8_t
-    {
-        ResolveFailed,
-        ConnectFailed,
-        TlsHandshakeFailed,
-        WriteFailed,
-        ReadFailed,
-        InvalidResponse
-    };
-
-    struct RestFailure
-    {
-        RestError error { RestError::InvalidResponse };
-        std::string message;
-    };
-
     struct BookLevel
     {
         Price price { 0 };

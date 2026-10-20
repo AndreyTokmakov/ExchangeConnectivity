@@ -48,7 +48,7 @@ namespace
     }
 }
 
-namespace binance
+namespace networking
 {
     class SnapshotRequest : public std::enable_shared_from_this<SnapshotRequest>
     {

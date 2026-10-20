@@ -10,13 +10,15 @@ add_compile_options(-c -Wall -O3 -std=c++26)
 
 add_executable(${PROJECT_NAME}
     main.cpp
-    types.hpp
-    connector.cpp
-    connector.hpp
-    rest_client.cpp
-    rest_client.hpp
-    websocket_client.cpp
-    websocket_client.hpp
+    binance/types.hpp
+    binance/connector.cpp
+    binance/connector.hpp
+    binance/parser.hpp
+    binance/parser.cpp
+    networking/rest_client.cpp
+    networking/rest_client.hpp
+    networking/websocket_client.cpp
+    networking/websocket_client.hpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC  ${THIRD_PARTY_DIR}/json/include)

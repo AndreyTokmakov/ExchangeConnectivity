@@ -37,7 +37,7 @@ namespace
     constexpr char HttpsPort[] = "443";
 }
 
-namespace binance
+namespace networking
 {
     class WebSocketSession : public std::enable_shared_from_this<WebSocketSession>
     {

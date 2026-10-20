@@ -7,7 +7,7 @@ Copyright   : Your copyright notice
 Description : Binance
 ============================================================================**/
 
-#include "connector.hpp"
+#include "binance/connector.hpp"
 #include <iostream>
 #include <boost/asio/steady_timer.hpp>
 
@@ -15,7 +15,7 @@ int main([[maybe_unused]] const int argc,
          [[maybe_unused]] char** argv)
 {
     boost::asio::io_context ioContext;
-    binance::BinanceConnector connector { ioContext, "BTCUSDT" };
+    binance::Connector connector { ioContext, "BTCUSDT" };
 
     std::uint64_t depthUpdateCount = 0;
     std::uint64_t tradeCount = 0;

@@ -10,19 +10,33 @@ Description : rest_client.hpp
 #ifndef EXCHANGECONNECTIVITY_BINANCE_REST_CLIENT_HPP
 #define EXCHANGECONNECTIVITY_BINANCE_REST_CLIENT_HPP
 
-#include "types.hpp"
-
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl/context.hpp>
 
 #include <expected>
 #include <functional>
-#include <memory>
 #include <string>
 
-namespace binance
+namespace networking
 {
     class SnapshotRequest;
+
+    enum class RestError : std::uint8_t
+    {
+        ResolveFailed,
+        ConnectFailed,
+        TlsHandshakeFailed,
+        WriteFailed,
+        ReadFailed,
+        InvalidResponse
+    };
+
+    struct RestFailure
+    {
+        RestError error { RestError::InvalidResponse };
+        std::string message;
+    };
+
 
     class RestClient
     {
