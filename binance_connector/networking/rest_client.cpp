@@ -76,32 +76,35 @@ namespace networking
                 {
                     if (errorCode) {
                         self->finish(std::unexpected(RestFailure {
-                            RestError::ResolveFailed, errorCode.message()
+                            .error = RestError::ResolveFailed,
+                            .message = errorCode.message()
                         }));
                         return;
                     }
 
                     beast::get_lowest_layer(self->stream).async_connect(endpoints,
                         [self](const beast::error_code& connectError, const Tcp::endpoint&)
-                        {
-                            if (connectError) {
-                                self->finish(std::unexpected(RestFailure {
-                                    RestError::ConnectFailed, connectError.message()
-                                }));
-                                return;
-                            }
-
-                            self->onConnected();
-                        });
+                    {
+                        if (connectError) {
+                            self->finish(std::unexpected(RestFailure {
+                                .error = RestError::ConnectFailed,
+                                .message = connectError.message()
+                            }));
+                            return;
+                        }
+                        self->onConnected();
+                    });
                 });
         }
 
     private:
+
         void onConnected()
         {
             if (SSL_set_tlsext_host_name(stream.native_handle(), BinanceRestHost) != 1) {
                 finish(std::unexpected(RestFailure {
-                    RestError::TlsHandshakeFailed, "Failed to configure TLS SNI"
+                    .error = RestError::TlsHandshakeFailed,
+                    .message = "Failed to configure TLS SNI"
                 }));
                 return;
             }
@@ -112,16 +115,16 @@ namespace networking
 
             stream.async_handshake(ssl::stream_base::client,
                 [self](const beast::error_code& errorCode)
-                {
-                    if (errorCode) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::TlsHandshakeFailed, errorCode.message()
-                        }));
-                        return;
-                    }
-
-                    self->sendRequest();
-                });
+            {
+                if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::TlsHandshakeFailed,
+                        .message = errorCode.message()
+                    }));
+                    return;
+                }
+                self->sendRequest();
+            });
         }
 
         void sendRequest()
@@ -134,19 +137,17 @@ namespace networking
             request.set(http::field::accept, "application/json");
 
             const std::shared_ptr<SnapshotRequest> self = shared_from_this();
-
-            http::async_write(stream, request,
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::WriteFailed, errorCode.message()
-                        }));
-                        return;
-                    }
-
-                    self->readResponse();
-                });
+            http::async_write(stream, request, [self](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::WriteFailed,
+                        .message = errorCode.message()
+                    }));
+                    return;
+                }
+                self->readResponse();
+            });
         }
 
         void readResponse()
@@ -155,25 +156,25 @@ namespace networking
 
             http::async_read(stream, buffer, response,
                 [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::ReadFailed, errorCode.message()
-                        }));
-                        return;
-                    }
+            {
+                if (errorCode) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::ReadFailed,
+                        .message = errorCode.message()
+                    }));
+                    return;
+                }
 
-                    if (self->response.result() != http::status::ok) {
-                        self->finish(std::unexpected(RestFailure {
-                            RestError::InvalidResponse,
-                            "HTTP status " + std::to_string(self->response.result_int()) +
-                                ": " + self->response.body()
-                        }));
-                        return;
-                    }
+                if (self->response.result() != http::status::ok) {
+                    self->finish(std::unexpected(RestFailure {
+                        .error = RestError::InvalidResponse,
+                        .message = "HTTP status " + std::to_string(self->response.result_int()) + ": " + self->response.body()
+                    }));
+                    return;
+                }
 
-                    self->finish(self->response.body());
-                });
+                self->finish(self->response.body());
+            });
         }
 
         void finish(Response result)

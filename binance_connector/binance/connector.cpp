@@ -110,7 +110,6 @@ namespace binance
             }
 
             const DepthUpdate update = Parser::parseDepthUpdate(message);
-
             if (depthHandler) {
                 depthHandler(update);
             }
@@ -127,7 +126,6 @@ namespace binance
             }
 
             const Trade trade = Parser::parseTrade(message);
-
             if (tradeHandler) {
                 tradeHandler(trade);
             }
@@ -143,12 +141,12 @@ namespace binance
             handler(std::unexpected(response.error()));
             return;
         }
-
         try {
             handler(Parser::parseSnapshot(*response));
         } catch (const std::exception& exception) {
             handler(std::unexpected(RestFailure {
-                RestError::InvalidResponse, exception.what()
+                .error = RestError::InvalidResponse,
+                .message = exception.what()
             }));
         }
     }
