@@ -9,13 +9,15 @@ Description : rest_client.cpp
 
 #include "rest_client.hpp"
 
-#include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
-
+#include <boost/asio/bind_executor.hpp>
+#include <boost/asio/dispatch.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/strand.hpp>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -25,7 +27,6 @@ Description : rest_client.cpp
 #include <chrono>
 #include <memory>
 #include <string>
-#include <utility>
 
 namespace
 {
@@ -39,15 +40,6 @@ namespace
 
     constexpr auto RequestTimeout = std::chrono::seconds { 10 };
     constexpr std::uint64_t MaxResponseBodySize = 16 * 1024 * 1024;
-
-    [[nodiscard]]
-    networking::RestFailure makeFailure(const networking::RestError error, std::string message)
-    {
-        return networking::RestFailure {
-            .error = error,
-            .message = std::move(message)
-        };
-    }
 }
 
 namespace networking
@@ -58,15 +50,24 @@ namespace networking
         RestSession(asio::io_context& ioContext,
                     ssl::context& sslContext,
                     HttpRequest request,
-                    RestClient::ResponseHandler handler)
-            : resolver(ioContext),
-              stream(ioContext, sslContext),
-              request(std::move(request)),
-              handler(std::move(handler))
+                    RestClient::ResponseHandler handler):
+              strand { asio::make_strand(ioContext) },
+              resolver { ioContext },
+              stream { ioContext, sslContext },
+              deadlineTimer { strand },
+              request { std::move(request) },
+              handler { std::move(handler) }
         {
         }
 
         void run()
+        {
+            asio::dispatch(strand, [self = shared_from_this()] {
+               self->execute();
+           });
+        }
+
+        void execute()
         {
             if (request.host.empty() || request.port.empty() || request.target.empty()) {
                 complete(std::unexpected { RestFailure {
@@ -89,8 +90,14 @@ namespace networking
 
             stream.set_verify_callback(ssl::host_name_verification(request.host));
 
-            resolver.async_resolve(request.host, request.port,
-                beast::bind_front_handler(&RestSession::onResolve, shared_from_this()));
+            deadlineTimer.expires_after(RequestTimeout);
+            deadlineTimer.async_wait(asio::bind_executor(strand,
+                beast::bind_front_handler(&RestSession::onTimeout, shared_from_this())
+            ));
+
+            resolver.async_resolve(request.host, request.port, asio::bind_executor(strand,
+                beast::bind_front_handler(&RestSession::onResolve, shared_from_this())
+            ));
         }
 
     private:
@@ -105,8 +112,9 @@ namespace networking
             }
 
             beast::get_lowest_layer(stream).expires_after(RequestTimeout);
-            beast::get_lowest_layer(stream).async_connect(results,
-                beast::bind_front_handler(&RestSession::onConnect, shared_from_this()));
+            beast::get_lowest_layer(stream).async_connect(results, asio::bind_executor(strand,
+                beast::bind_front_handler(&RestSession::onConnect, shared_from_this())
+            ));
         }
 
         void onConnect(const beast::error_code &errorCode,
@@ -121,8 +129,9 @@ namespace networking
             }
 
             beast::get_lowest_layer(stream).expires_after(RequestTimeout);
-            stream.async_handshake(ssl::stream_base::client,
-                beast::bind_front_handler(&RestSession::onHandshake, shared_from_this()));
+            stream.async_handshake(ssl::stream_base::client, asio::bind_executor(strand,
+                beast::bind_front_handler(&RestSession::onHandshake, shared_from_this())
+            ));
         }
 
         void onHandshake(const beast::error_code &errorCode)
@@ -155,8 +164,9 @@ namespace networking
             httpRequest = std::move(http_request);
 
             beast::get_lowest_layer(stream).expires_after(RequestTimeout);
-            http::async_write(stream, httpRequest,
-                beast::bind_front_handler(&RestSession::onWrite, shared_from_this()));
+            http::async_write(stream, httpRequest, asio::bind_executor(strand,
+                beast::bind_front_handler(&RestSession::onWrite, shared_from_this())
+            ));
         }
 
         void onWrite(const beast::error_code &errorCode, std::size_t)
@@ -172,8 +182,9 @@ namespace networking
             parser.body_limit(MaxResponseBodySize);
 
             beast::get_lowest_layer(stream).expires_after(RequestTimeout);
-            http::async_read(stream, buffer, parser,
-                beast::bind_front_handler(&RestSession::onRead, shared_from_this()));
+            http::async_read(stream, buffer, parser, asio::bind_executor(strand,
+                beast::bind_front_handler(&RestSession::onRead, shared_from_this())
+            ));
         }
 
         void onRead(const beast::error_code &errorCode, std::size_t)
@@ -182,7 +193,7 @@ namespace networking
                 complete(std::unexpected { RestFailure {
                     .error = RestError::ReadFailed,
                     .message = errorCode.message()
-               }});
+                }});
                 return;
             }
 
@@ -200,8 +211,34 @@ namespace networking
             complete(std::move(response));
         }
 
+        void onTimeout(const beast::error_code& errorCode)
+        {
+            if (errorCode || completed) {
+                return;
+            }
+
+            resolver.cancel();
+
+            beast::error_code err;
+            const auto _ = beast::get_lowest_layer(stream).socket().close(err);
+
+            complete(std::unexpected { RestFailure {
+                .error = RestError::Timeout,
+                .message = "Request deadline exceeded"
+            }});
+        }
+
         void complete(RestClient::Response&& response)
         {
+            if (completed) {
+                return;
+            }
+
+            completed = true;
+
+            beast::error_code ignored;
+            deadlineTimer.cancel(ignored);
+
             if (!handler) {
                 return;
             }
@@ -210,13 +247,16 @@ namespace networking
             callback(std::move(response));
         }
 
+        asio::strand<asio::io_context::executor_type> strand;
         Tcp::resolver resolver;
         beast::ssl_stream<beast::tcp_stream> stream;
+        asio::steady_timer deadlineTimer;
         beast::flat_buffer buffer;
         http::response_parser<http::string_body> parser;
         HttpRequest request;
         http::request<http::string_body> httpRequest;
         RestClient::ResponseHandler handler;
+        bool completed { false };
     };
 
     RestClient::RestClient(asio::io_context& ioContext, ssl::context& sslContext)

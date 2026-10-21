@@ -31,6 +31,7 @@ namespace networking
         TlsHandshakeFailed,
         WriteFailed,
         ReadFailed,
+        Timeout,
         InvalidRequest,
         HttpStatus,
         InvalidResponse
