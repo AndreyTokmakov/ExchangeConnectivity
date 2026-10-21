@@ -36,13 +36,13 @@ namespace
     [[nodiscard]]
     std::string urlEncode(const std::string_view value)
     {
-
         std::string result;
         result.reserve(value.size());
 
         for (const unsigned char character : value)
         {
-            if (std::isalnum(character) || character == '-' || character == '_' || character == '.' || character == '~') {
+            if (std::isalnum(character) || character == '-' || character == '_' ||
+                character == '.' || character == '~') {
                 result.push_back(static_cast<char>(character));
             }
             else

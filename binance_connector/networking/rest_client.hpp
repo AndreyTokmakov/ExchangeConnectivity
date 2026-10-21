@@ -37,7 +37,6 @@ namespace networking
         std::string message;
     };
 
-
     class RestClient
     {
     public:

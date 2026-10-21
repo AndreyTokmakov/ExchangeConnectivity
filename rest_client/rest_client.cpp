@@ -71,23 +71,21 @@ namespace networking
         void execute()
         {
             state = State::Running;
-            if (request.host.empty() || request.port.empty() || request.target.empty()) {
-                complete(std::unexpected { RestFailure {
+            if (request.host.empty() || request.port.empty() || request.target.empty())
+            {
+                return complete(std::unexpected { RestFailure {
                     .error = RestError::InvalidRequest,
                     .message = "Host, port and target are required"
                 }});
-                return;
             }
-
-            if (!SSL_set_tlsext_host_name(stream.native_handle(), request.host.c_str())) {
+            if (!SSL_set_tlsext_host_name(stream.native_handle(), request.host.c_str()))
+            {
                 const unsigned long error = ERR_get_error();
                 const std::string message = error == 0 ? "Failed to set TLS server name"s : ERR_error_string(error, nullptr);
-
-                complete(std::unexpected { RestFailure {
+                return complete(std::unexpected { RestFailure {
                     .error = RestError::TlsHandshakeFailed,
                     .message = message
                 }});
-                return;
             }
 
             stream.set_verify_callback(ssl::host_name_verification(request.host));
@@ -116,13 +114,12 @@ namespace networking
             if (State::Completed == state) {
                 return;
             }
-
-            if (errorCode) {
-                complete(std::unexpected { RestFailure {
+            if (errorCode)
+            {
+                return complete(std::unexpected { RestFailure {
                     .error = RestError::ResolveFailed,
                     .message = errorCode.message()
                 }});
-                return;
             }
 
             beast::get_lowest_layer(stream).async_connect(results, asio::bind_executor(strand,
@@ -136,15 +133,13 @@ namespace networking
             if (State::Completed == state) {
                 return;
             }
-
-            if (errorCode) {
-                complete(std::unexpected { RestFailure {
+            if (errorCode)
+            {
+                return complete(std::unexpected { RestFailure {
                      .error = RestError::ConnectFailed,
                      .message = errorCode.message()
                 }});
-                return;
             }
-
             stream.async_handshake(ssl::stream_base::client, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onHandshake, shared_from_this())
             ));
@@ -155,13 +150,12 @@ namespace networking
             if (State::Completed == state) {
                 return;
             }
-
-            if (errorCode) {
-                complete(std::unexpected { RestFailure {
+            if (errorCode)
+            {
+                return complete(std::unexpected { RestFailure {
                      .error = RestError::TlsHandshakeFailed,
                      .message = errorCode.message()
                 }});
-                return;
             }
 
             http::request<http::string_body> http_request {
@@ -182,7 +176,6 @@ namespace networking
             }
 
             httpRequest = std::move(http_request);
-
             http::async_write(stream, httpRequest, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onWrite, shared_from_this())
             ));
@@ -193,17 +186,15 @@ namespace networking
             if (State::Completed == state) {
                 return;
             }
-
-            if (errorCode) {
-                complete(std::unexpected { RestFailure {
+            if (errorCode)
+            {
+                return complete(std::unexpected { RestFailure {
                      .error = RestError::WriteFailed,
                      .message = errorCode.message()
                 }});
-                return;
             }
 
             parser.body_limit(MaxResponseBodySize);
-
             http::async_read(stream, buffer, parser, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onRead, shared_from_this())
             ));
@@ -214,13 +205,12 @@ namespace networking
             if (State::Completed == state) {
                 return;
             }
-
-            if (errorCode) {
-                complete(std::unexpected { RestFailure {
+            if (errorCode)
+            {
+                return complete(std::unexpected { RestFailure {
                     .error = RestError::ReadFailed,
                     .message = errorCode.message()
                 }});
-                return;
             }
 
             http::response<http::string_body> httpResponse = parser.release();
