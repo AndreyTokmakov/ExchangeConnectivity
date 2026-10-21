@@ -22,11 +22,12 @@ Description : rest_client.cpp
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include <format>
-#include <utility>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
+
 
 namespace
 {
@@ -69,6 +70,7 @@ namespace networking
 
         void execute()
         {
+            state = State::Running;
             if (request.host.empty() || request.port.empty() || request.target.empty()) {
                 complete(std::unexpected { RestFailure {
                     .error = RestError::InvalidRequest,
@@ -101,8 +103,20 @@ namespace networking
         }
 
     private:
+
+        enum class State: uint8_t
+        {
+            Idle,
+            Running,
+            Completed,
+        };
+
         void onResolve(const beast::error_code &errorCode, const Tcp::resolver::results_type &results)
         {
+            if (State::Completed == state) {
+                return;
+            }
+
             if (errorCode) {
                 complete(std::unexpected { RestFailure {
                     .error = RestError::ResolveFailed,
@@ -111,7 +125,6 @@ namespace networking
                 return;
             }
 
-            beast::get_lowest_layer(stream).expires_after(RequestTimeout);
             beast::get_lowest_layer(stream).async_connect(results, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onConnect, shared_from_this())
             ));
@@ -120,6 +133,10 @@ namespace networking
         void onConnect(const beast::error_code &errorCode,
                        Tcp::resolver::results_type::endpoint_type)
         {
+            if (State::Completed == state) {
+                return;
+            }
+
             if (errorCode) {
                 complete(std::unexpected { RestFailure {
                      .error = RestError::ConnectFailed,
@@ -128,7 +145,6 @@ namespace networking
                 return;
             }
 
-            beast::get_lowest_layer(stream).expires_after(RequestTimeout);
             stream.async_handshake(ssl::stream_base::client, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onHandshake, shared_from_this())
             ));
@@ -136,6 +152,10 @@ namespace networking
 
         void onHandshake(const beast::error_code &errorCode)
         {
+            if (State::Completed == state) {
+                return;
+            }
+
             if (errorCode) {
                 complete(std::unexpected { RestFailure {
                      .error = RestError::TlsHandshakeFailed,
@@ -163,7 +183,6 @@ namespace networking
 
             httpRequest = std::move(http_request);
 
-            beast::get_lowest_layer(stream).expires_after(RequestTimeout);
             http::async_write(stream, httpRequest, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onWrite, shared_from_this())
             ));
@@ -171,6 +190,10 @@ namespace networking
 
         void onWrite(const beast::error_code &errorCode, std::size_t)
         {
+            if (State::Completed == state) {
+                return;
+            }
+
             if (errorCode) {
                 complete(std::unexpected { RestFailure {
                      .error = RestError::WriteFailed,
@@ -181,7 +204,6 @@ namespace networking
 
             parser.body_limit(MaxResponseBodySize);
 
-            beast::get_lowest_layer(stream).expires_after(RequestTimeout);
             http::async_read(stream, buffer, parser, asio::bind_executor(strand,
                 beast::bind_front_handler(&RestSession::onRead, shared_from_this())
             ));
@@ -189,6 +211,10 @@ namespace networking
 
         void onRead(const beast::error_code &errorCode, std::size_t)
         {
+            if (State::Completed == state) {
+                return;
+            }
+
             if (errorCode) {
                 complete(std::unexpected { RestFailure {
                     .error = RestError::ReadFailed,
@@ -213,7 +239,7 @@ namespace networking
 
         void onTimeout(const beast::error_code& errorCode)
         {
-            if (errorCode || completed) {
+            if (errorCode || State::Completed == state) {
                 return;
             }
 
@@ -230,11 +256,11 @@ namespace networking
 
         void complete(RestClient::Response&& response)
         {
-            if (completed) {
+            if (State::Completed == state) {
                 return;
             }
 
-            completed = true;
+            state = State::Completed;
 
             beast::error_code ignored;
             deadlineTimer.cancel(ignored);
@@ -256,7 +282,7 @@ namespace networking
         HttpRequest request;
         http::request<http::string_body> httpRequest;
         RestClient::ResponseHandler handler;
-        bool completed { false };
+        State state { State::Idle };
     };
 
     RestClient::RestClient(asio::io_context& ioContext, ssl::context& sslContext)
