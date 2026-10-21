@@ -69,7 +69,7 @@ namespace networking
         void run()
         {
             if (request.host.empty() || request.port.empty() || request.target.empty()) {
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                     .error = RestError::InvalidRequest,
                     .message = "Host, port and target are required"
                 }});
@@ -80,7 +80,7 @@ namespace networking
                 const unsigned long error = ERR_get_error();
                 const std::string message = error == 0 ? "Failed to set TLS server name"s : ERR_error_string(error, nullptr);
 
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                     .error = RestError::TlsHandshakeFailed,
                     .message = message
                 }});
@@ -97,7 +97,7 @@ namespace networking
         void onResolve(const beast::error_code &errorCode, const Tcp::resolver::results_type &results)
         {
             if (errorCode) {
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                     .error = RestError::ResolveFailed,
                     .message = errorCode.message()
                 }});
@@ -113,7 +113,7 @@ namespace networking
                        Tcp::resolver::results_type::endpoint_type)
         {
             if (errorCode) {
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                      .error = RestError::ConnectFailed,
                      .message = errorCode.message()
                 }});
@@ -128,7 +128,7 @@ namespace networking
         void onHandshake(const beast::error_code &errorCode)
         {
             if (errorCode) {
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                      .error = RestError::TlsHandshakeFailed,
                      .message = errorCode.message()
                 }});
@@ -162,7 +162,7 @@ namespace networking
         void onWrite(const beast::error_code &errorCode, std::size_t)
         {
             if (errorCode) {
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                      .error = RestError::WriteFailed,
                      .message = errorCode.message()
                 }});
@@ -179,7 +179,7 @@ namespace networking
         void onRead(const beast::error_code &errorCode, std::size_t)
         {
             if (errorCode) {
-                finish(std::unexpected { RestFailure {
+                complete(std::unexpected { RestFailure {
                     .error = RestError::ReadFailed,
                     .message = errorCode.message()
                }});
@@ -197,10 +197,10 @@ namespace networking
                     std::string(field.value().data(), field.value().size()));
             }
 
-            finish(std::move(response));
+            complete(std::move(response));
         }
 
-        void finish(RestClient::Response response)
+        void complete(RestClient::Response&& response)
         {
             if (!handler) {
                 return;
@@ -227,7 +227,7 @@ namespace networking
 
     RestClient::~RestClient() = default;
 
-    void RestClient::asyncRequest(HttpRequest request, ResponseHandler handler) const
+    void RestClient::asyncRequest(HttpRequest& request, ResponseHandler handler) const
     {
         std::make_shared<RestSession>(
             ioContext,

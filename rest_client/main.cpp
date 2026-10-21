@@ -17,12 +17,24 @@ Description : Binance
 
 #include "rest_client.hpp"
 
-namespace binance
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ssl/context.hpp>
+#include <boost/beast/http.hpp>
+
+namespace
 {
-    constexpr char HexDigits[] = "0123456789ABCDEF";
+    namespace beast = boost::beast;
+    namespace http  = beast::http;
+    namespace asio  = boost::asio;
+    namespace ssl   = asio::ssl;
+
+    using namespace std::string_view_literals;
+
+    constexpr std::string_view HexDigits = "0123456789ABCDEF"sv;
 
     [[nodiscard]]
-    static std::string urlEncode(const std::string_view value)
+    std::string urlEncode(const std::string_view value)
     {
 
         std::string result;
@@ -44,62 +56,31 @@ namespace binance
         return result;
     }
 
-    class BinanceRestClient
+    void run()
     {
-    public:
-        using Response = std::expected<std::string, networking::RestFailure>;
-        using ResponseHandler = std::function<void(Response)>;
+        asio::io_context ioContext;
+        ssl::context  sslContext { ssl::context::tls_client };
 
-        explicit BinanceRestClient(networking::RestClient& restClient);
+        const networking::RestClient restClient { ioContext, sslContext };
 
-        BinanceRestClient(const BinanceRestClient&) = delete;
-        BinanceRestClient& operator=(const BinanceRestClient&) = delete;
-
-        void asyncGetDepthSnapshot(const std::string& symbol, ResponseHandler handler) const;
-
-    private:
-        networking::RestClient& restClient;
-    };
-
-
-    BinanceRestClient::BinanceRestClient(networking::RestClient& restClient)
-      : restClient(restClient)
-    {
-    }
-
-    void BinanceRestClient::asyncGetDepthSnapshot(const std::string& symbol, ResponseHandler handler) const
-    {
         networking::HttpRequest request;
         request.host = "api.binance.com";
-        request.target = "/api/v3/depth?symbol=" + urlEncode(symbol) + "&limit=1000";
+        request.target = "/api/v3/depth?symbol=" + urlEncode("BTCUSDT") + "&limit=1000";
         request.method = boost::beast::http::verb::get;
 
-        restClient.asyncRequest(std::move(request),
-            [handler = std::move(handler)](networking::RestClient::Response response) mutable
-            {
-                if (!handler) {
-                    return;
-                }
+        restClient.asyncRequest(request,[](networking::RestClient::Response response) mutable
+        {
+            if (!response) {
+                std::cerr << response.error().message << std::endl;
+                return;
+            }
+            std::cout << response->status << std::endl;
+            std::cout << response->body << std::endl;
+        });
 
-                if (!response) {
-                    handler(std::unexpected { response.error() });
-                    return;
-                }
-
-                if (response->status < 200 || response->status >= 300) {
-                    handler(std::unexpected {
-                        networking::RestFailure {
-                            .error = networking::RestError::HttpStatus,
-                            .message = "Binance REST request returned HTTP status " +
-                                std::to_string(response->status)
-                        }
-                    });
-                    return;
-                }
-
-                handler(Response { std::move(response->body) });
-            });
+        ioContext.run();
     }
+
 }
 
 
@@ -108,7 +89,7 @@ int main([[maybe_unused]] const int argc,
          [[maybe_unused]] char** argv)
 {
     const std::vector<std::string_view> args(argv + 1, argv + argc);
-
+    run();
 
     return EXIT_SUCCESS;
 }

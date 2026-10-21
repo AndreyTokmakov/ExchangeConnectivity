@@ -73,7 +73,7 @@ namespace networking
         RestClient(const RestClient&) = delete;
         RestClient& operator=(const RestClient&) = delete;
 
-        void asyncRequest(HttpRequest request, ResponseHandler handler) const;
+        void asyncRequest(HttpRequest& request, ResponseHandler handler) const;
 
     private:
         boost::asio::io_context& ioContext;
