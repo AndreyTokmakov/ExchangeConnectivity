@@ -48,7 +48,7 @@ namespace networking
         WebSocketClient& operator=(const WebSocketClient&) = delete;
 
         void start(MessageHandler handler);
-        void send(std::string message);
+        void send(std::string message) const;
         void stop();
 
     private:

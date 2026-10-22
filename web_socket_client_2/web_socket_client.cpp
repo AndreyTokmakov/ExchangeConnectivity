@@ -69,7 +69,6 @@ namespace networking
                 if (State::Idle != self->state) {
                     return;
                 }
-
                 self->state = State::Connecting;
                 self->resolve();
             });
@@ -81,7 +80,6 @@ namespace networking
                 if (State::Stopped == self->state) {
                     return;
                 }
-
                 self->outgoingMessages.push_back(std::move(message));
                 self->write();
             });
@@ -116,7 +114,6 @@ namespace networking
             if (State::Connecting != state) {
                 return;
             }
-
             if (errorCode) {
                 fail("WebSocket resolve failed", errorCode);
                 return;
@@ -132,12 +129,9 @@ namespace networking
             if (State::Connecting != state) {
                 return;
             }
-
             if (errorCode) {
-                fail("WebSocket connect failed", errorCode);
-                return;
+                return fail("WebSocket connect failed", errorCode);
             }
-
             if (SSL_set_tlsext_host_name(stream.next_layer().native_handle(), host.c_str()) != 1) {
                 std::cerr << "Failed to configure TLS SNI for " << host << '\n';
                 stopNow();
@@ -145,7 +139,6 @@ namespace networking
             }
 
             stream.next_layer().set_verify_callback(ssl::host_name_verification(host));
-
             stream.next_layer().async_handshake(ssl::stream_base::client, net::bind_executor(strand,
                 beast::bind_front_handler(&WebSocketSession::onTlsHandshake, shared_from_this())
             ));
@@ -156,14 +149,11 @@ namespace networking
             if (State::Connecting != state) {
                 return;
             }
-
             if (errorCode) {
-                fail("WebSocket TLS handshake failed", errorCode);
-                return;
+                return fail("WebSocket TLS handshake failed", errorCode);
             }
 
             stream.set_option(websocket::stream_base::timeout::suggested(beast::role_type::client));
-
             stream.async_handshake(host, target, net::bind_executor(strand,
                 beast::bind_front_handler(&WebSocketSession::onHandshake, shared_from_this())
             ));
@@ -174,10 +164,8 @@ namespace networking
             if (State::Connecting != state) {
                 return;
             }
-
             if (errorCode) {
-                fail("WebSocket handshake failed", errorCode);
-                return;
+                return fail("WebSocket handshake failed", errorCode);
             }
 
             state = State::Connected;
@@ -190,7 +178,6 @@ namespace networking
             if (State::Connected != state) {
                 return;
             }
-
             stream.async_read(buffer, net::bind_executor(strand,
                 beast::bind_front_handler(&WebSocketSession::onRead, shared_from_this())
             ));
@@ -229,7 +216,6 @@ namespace networking
             }
 
             writing = true;
-
             stream.async_write(net::buffer(outgoingMessages.front()), net::bind_executor(strand,
                 beast::bind_front_handler(&WebSocketSession::onWrite, shared_from_this())
             ));
@@ -240,9 +226,7 @@ namespace networking
             if (State::Stopped == state) {
                 return;
             }
-
             writing = false;
-
             if (errorCode) {
                 fail("WebSocket write failed", errorCode);
                 return;
@@ -252,12 +236,11 @@ namespace networking
             write();
         }
 
-        void fail(std::string_view operation, const beast::error_code& errorCode)
+        void fail(const std::string_view operation, const beast::error_code& errorCode)
         {
             if (errorCode != net::error::operation_aborted) {
                 std::cerr << operation << ": " << errorCode.message() << '\n';
             }
-
             stopNow();
         }
 
@@ -270,11 +253,10 @@ namespace networking
             state = State::Stopped;
             writing = false;
             outgoingMessages.clear();
-
             resolver.cancel();
 
-            beast::error_code ignored;
-            beast::get_lowest_layer(stream).socket().close(ignored);
+            beast::error_code error;
+            const auto _ = beast::get_lowest_layer(stream).socket().close(error);
         }
 
         net::strand<net::io_context::executor_type> strand;
@@ -324,7 +306,7 @@ namespace networking
         session->start();
     }
 
-    void WebSocketClient::send(std::string message)
+    void WebSocketClient::send(std::string message) const
     {
         if (session) {
             session->send(std::move(message));

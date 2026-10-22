@@ -66,7 +66,7 @@ int main([[maybe_unused]] const int argc,
         std::cout << message << '\n';
     });
 
-    std::thread ioThread { [&ioContext] {
+    std::jthread ioThread { [&ioContext] {
         ioContext.run();
     } };
 
@@ -85,7 +85,6 @@ int main([[maybe_unused]] const int argc,
 
     client.stop();
     ioContext.stop();
-    ioThread.join();
 
     return EXIT_SUCCESS;
 }
