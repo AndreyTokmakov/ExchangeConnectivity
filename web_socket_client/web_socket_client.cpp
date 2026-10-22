@@ -47,78 +47,67 @@ namespace networking
         WebSocketSession(net::io_context& ioContext,
                          ssl::context& sslContext,
                          std::string streamName,
-                         MessageHandler handler)
-            : resolver(ioContext),
-              stream(ioContext, sslContext),
-              streamName(std::move(streamName)),
-              handler(std::move(handler))
+                         MessageHandler handler):
+            resolver { ioContext },
+            stream { ioContext, sslContext },
+            streamName { std::move(streamName) },
+            handler { std::move(handler) }
         {
         }
 
         void start()
         {
-            const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
             resolver.async_resolve(BinanceHost, HttpsPort,
-                [self](const beast::error_code& errorCode, const Tcp::resolver::results_type& endpoints)
+                [self = shared_from_this()](const beast::error_code& errorCode, const Tcp::resolver::results_type& endpoints)
+            {
+                if (errorCode) {
+                    self->reportError("WebSocket resolve failed", errorCode);
+                    return;
+                }
+                beast::get_lowest_layer(self->stream).async_connect(endpoints, [self](const beast::error_code& connectError, const Tcp::endpoint&)
                 {
-                    if (errorCode) {
-                        self->reportError("WebSocket resolve failed", errorCode);
+                    if (connectError) {
+                        self->reportError("WebSocket connect failed", connectError);
                         return;
                     }
-
-                    beast::get_lowest_layer(self->stream).async_connect(endpoints,
-                        [self](const beast::error_code& connectError, const Tcp::endpoint&)
-                        {
-                            if (connectError) {
-                                self->reportError("WebSocket connect failed", connectError);
-                                return;
-                            }
-
-                            self->onConnected();
-                        });
+                    self->onConnected();
                 });
+            });
         }
 
         void stop()
         {
             beast::error_code errorCode;
-            beast::get_lowest_layer(stream).socket().cancel(errorCode);
-            beast::get_lowest_layer(stream).socket().close(errorCode);
+            auto _ = beast::get_lowest_layer(stream).socket().cancel(errorCode);
+            _ = beast::get_lowest_layer(stream).socket().close(errorCode);
         }
 
     private:
         void onConnected()
         {
-            if (SSL_set_tlsext_host_name(
-                    stream.next_layer().native_handle(), BinanceHost) != 1) {
+            if (SSL_set_tlsext_host_name(stream.next_layer().native_handle(), BinanceHost) != 1) {
                 std::cerr << "Failed to configure TLS SNI\n";
                 stop();
                 return;
             }
 
             stream.next_layer().set_verify_callback(ssl::host_name_verification(BinanceHost));
-
-            const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
             stream.next_layer().async_handshake(ssl::stream_base::client,
-                [self](const beast::error_code& errorCode)
-                {
-                    if (errorCode) {
-                        self->reportError("WebSocket TLS handshake failed", errorCode);
-                        return;
-                    }
-
-                    self->onTlsHandshake();
-                });
+                [self = shared_from_this()](const beast::error_code& errorCode)
+            {
+                if (errorCode) {
+                    self->reportError("WebSocket TLS handshake failed", errorCode);
+                    return;
+                }
+                self->onTlsHandshake();
+            });
         }
 
         void onTlsHandshake()
         {
-            const std::shared_ptr<WebSocketSession> self = shared_from_this();
-            stream.async_handshake(BinanceHost, "/ws",[self](const beast::error_code& errorCode){
+            stream.async_handshake(BinanceHost, "/ws",[self = shared_from_this()](const beast::error_code& errorCode){
                 if (errorCode) {
-                    self->reportError("WebSocket handshake failed", errorCode);
+                    reportError("WebSocket handshake failed", errorCode);
                     return;
                 }
                 self->subscribe();
@@ -127,51 +116,42 @@ namespace networking
 
         void subscribe()
         {
-            const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
-            subscription = "{\"method\":\"SUBSCRIBE\",\"params\":[\"" +
-                streamName + "\"],\"id\":1}";
+            subscription = R"({"method":"SUBSCRIBE","params":[")" + streamName + R"("],"id":1})";
+            subscription = R"({"method":"SUBSCRIBE","params":[")" + streamName + R"("],"id":1})";
 
             stream.async_write(net::buffer(subscription),
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        self->reportError("WebSocket subscription failed", errorCode);
-                        return;
-                    }
-
-                    self->read();
-                });
+                [self = shared_from_this()](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    reportError("WebSocket subscription failed", errorCode);
+                    return;
+                }
+                self->read();
+            });
         }
 
         void read()
         {
-            const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
-            stream.async_read(buffer,
-                [self](const beast::error_code& errorCode, std::size_t)
-                {
-                    if (errorCode) {
-                        if (errorCode != websocket::error::closed &&
-                            errorCode != net::error::operation_aborted) {
-                            self->reportError("WebSocket read failed", errorCode);
-                        }
-
-                        return;
+            stream.async_read(buffer,[self = shared_from_this()](const beast::error_code& errorCode, std::size_t)
+            {
+                if (errorCode) {
+                    if (errorCode != websocket::error::closed && errorCode != net::error::operation_aborted) {
+                        reportError("WebSocket read failed", errorCode);
                     }
+                    return;
+                }
 
-                    std::string message = beast::buffers_to_string(self->buffer.data());
-                    self->buffer.consume(self->buffer.size());
+                std::string message = beast::buffers_to_string(self->buffer.data());
+                self->buffer.consume(self->buffer.size());
 
-                    if (self->handler) {
-                        self->handler(std::move(message));
-                    }
-
-                    self->read();
-                });
+                if (self->handler) {
+                    self->handler(std::move(message));
+                }
+                self->read();
+            });
         }
 
-        void reportError(const char* operation, const beast::error_code& errorCode)
+        static void reportError(const std::string_view operation, const beast::error_code& errorCode)
         {
             if (errorCode != net::error::operation_aborted) {
                 std::cerr << operation << ": " << errorCode.message() << '\n';
