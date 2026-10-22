@@ -10,4 +10,39 @@ Description : web_socket_client.hpp
 #ifndef EXCHANGECONNECTIVITY_WEB_SOCKET_CLIENT_HPP
 #define EXCHANGECONNECTIVITY_WEB_SOCKET_CLIENT_HPP
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ssl/context.hpp>
+
+#include <functional>
+#include <memory>
+#include <string>
+
+namespace networking
+{
+    class WebSocketSession;
+
+    class WebSocketClient
+    {
+    public:
+        using MessageHandler = std::function<void(std::string)>;
+
+        WebSocketClient(boost::asio::io_context& ioContext,
+                        boost::asio::ssl::context& sslContext,
+                        std::string streamName);
+        ~WebSocketClient();
+
+        WebSocketClient(const WebSocketClient&) = delete;
+        WebSocketClient& operator=(const WebSocketClient&) = delete;
+
+        void start(MessageHandler handler);
+        void stop();
+
+    private:
+        boost::asio::io_context& ioContext;
+        boost::asio::ssl::context& sslContext;
+        std::string streamName;
+        std::shared_ptr<WebSocketSession> session;
+    };
+}
+
 #endif //EXCHANGECONNECTIVITY_WEB_SOCKET_CLIENT_HPP

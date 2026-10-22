@@ -116,17 +116,13 @@ namespace networking
         void onTlsHandshake()
         {
             const std::shared_ptr<WebSocketSession> self = shared_from_this();
-
-            stream.async_handshake(BinanceHost, "/ws",
-                [self](const beast::error_code& errorCode)
-                {
-                    if (errorCode) {
-                        self->reportError("WebSocket handshake failed", errorCode);
-                        return;
-                    }
-
-                    self->subscribe();
-                });
+            stream.async_handshake(BinanceHost, "/ws",[self](const beast::error_code& errorCode){
+                if (errorCode) {
+                    self->reportError("WebSocket handshake failed", errorCode);
+                    return;
+                }
+                self->subscribe();
+            });
         }
 
         void subscribe()

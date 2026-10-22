@@ -22,11 +22,9 @@ namespace
     [[nodiscard]]
     std::string toLower(std::string value)
     {
-        for (char& character : value) {
-            character = static_cast<char>(
-                std::tolower(static_cast<unsigned char>(character)));
-        }
-
+        std::ranges::transform(value, value.begin(),[](const unsigned char character){
+            return static_cast<char>(std::tolower(character));
+        });
         return value;
     }
 }

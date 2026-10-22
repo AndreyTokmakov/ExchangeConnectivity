@@ -46,7 +46,6 @@ set (Boost_NO_SYSTEM_PATHS ON)
 
 add_subdirectory(binance)
 add_subdirectory(binance_connector)
-add_subdirectory(binance_connector_old)
 add_subdirectory(binance_data_parser)
 add_subdirectory(configuration)
 add_subdirectory(rest_client)
