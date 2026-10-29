@@ -56,29 +56,66 @@ namespace
         return result;
     }
 
+
+    class TestRestClient
+    {
+    public:
+        explicit TestRestClient(std::string endpoint) noexcept :
+            endpoint { std::move(endpoint) },
+            ioContext { 1 },
+            sslContext { boost::asio::ssl::context::tls_client },
+            restClient { ioContext, sslContext }
+        {
+        }
+
+        [[nodiscard]]
+        bool sendRequest()
+        {
+            if (ioContext.stopped())
+                ioContext.restart();
+
+            networking::HttpRequest request;
+            request.host = endpoint;
+            request.target = "/api/v3/depth?symbol=" + urlEncode("BTCUSDT") + "&limit=1000";
+            request.method = boost::beast::http::verb::get;
+
+            restClient.asyncRequest(request,[](networking::RestClient::Response response) mutable
+            {
+                if (!response) {
+                    std::cerr << response.error().message << std::endl;
+                    return;
+                }
+
+                std::cout << response->status << std::endl;
+                std::cout << response->body << std::endl;
+                /*
+                if (!parseDepthSnapshot(response->body, snapshot)) {
+                    std::cerr << "Parse depth snapshot failed" << std::endl;
+                }*/
+            });
+
+            ioContext.dispatch();
+
+            return true;
+        }
+
+    private:
+        std::string endpoint;
+        asio::io_context ioContext;
+        ssl::context sslContext;
+        networking::RestClient restClient;
+    };
+
+
+
     void run()
     {
-        asio::io_context ioContext;
-        ssl::context  sslContext { ssl::context::tls_client };
+        TestRestClient client {  "api.binance.com" };
 
-        const networking::RestClient restClient { ioContext, sslContext };
-
-        networking::HttpRequest request;
-        request.host = "api.binance.com";
-        request.target = "/api/v3/depth?symbol=" + urlEncode("BTCUSDT") + "&limit=1000";
-        request.method = boost::beast::http::verb::get;
-
-        restClient.asyncRequest(request,[](networking::RestClient::Response response) mutable
-        {
-            if (!response) {
-                std::cerr << response.error().message << std::endl;
-                return;
-            }
-            std::cout << response->status << std::endl;
-            std::cout << response->body << std::endl;
-        });
-
-        ioContext.run();
+        for (int i = 0; i < 3; ++i) {
+            std::cout << std::string(140, '=') << std::endl;
+            const auto _ = client.sendRequest();
+        }
     }
 
 }
