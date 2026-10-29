@@ -110,8 +110,7 @@ namespace book_updates_pool
 
             for (std::size_t index = 0; index < objectCount; ++index)
             {
-                objects.emplace_back();
-                objects.back().updates.reserve(initialUpdateCapacity);
+                objects.emplace_back().updates.reserve(initialUpdateCapacity);
                 freeIndices.push_back(index);
             }
         }
@@ -161,7 +160,7 @@ namespace book_updates_pool
     class OrderBookBuilder
     {
     public:
-        static void process(const BookUpdatePool::Lease &update)
+        static void process(BookUpdatePool::Lease && update)
         {
             if (!update) {
                 return;
@@ -184,7 +183,7 @@ namespace book_updates_pool
 
         for (std::uint64_t sequence = 1; sequence <= 5; ++sequence)
         {
-            auto update = pool.acquire();
+            BookUpdatePool::Lease update = pool.acquire();
             if (!update)
             {
                 std::cerr << "No free BookUpdate objects\n";
