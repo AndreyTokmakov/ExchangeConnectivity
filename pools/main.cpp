@@ -15,7 +15,7 @@ Description : C++ Utilities
 #include <condition_variable>
 #include <deque>
 
-namespace book_updates_pool
+namespace
 {
     enum class Side : std::uint8_t {
         Buy,
@@ -36,7 +36,10 @@ namespace book_updates_pool
         std::uint64_t lastSequence {};
         std::vector<PriceLevel> updates;
     };
+}
 
+namespace book_updates_pool
+{
     class BookUpdatePool
     {
     public:
@@ -219,6 +222,257 @@ namespace book_updates_pool
     }
 }
 
+
+namespace book_updates_scsp_pool
+{
+ #ifdef __cpp_lib_hardware_interference_size
+    inline constexpr std::size_t kCacheLineSize = std::hardware_destructive_interference_size;
+#else
+    inline constexpr std::size_t kCacheLineSize = 64;
+#endif
+
+    constexpr uint32_t fast_modulo(const uint32_t n, const uint32_t d) noexcept {
+        return n & (d - 1);
+    }
+
+    constexpr bool is_pow_of_2(const int value) noexcept {
+        return (value && !(value & (value - 1)));
+    }
+
+    template<typename Ty, uint32_t Capacity>
+    class RingBuffer
+    {
+        using size_type  = int64_t;
+        using value_type = Ty;
+        using collection_type = std::vector<value_type>;
+
+        static_assert(!std::is_same_v<value_type, void>, "ERROR: Value type can not be void");
+        static_assert(is_pow_of_2(Capacity), "ERROR: Capacity must be a power of 2");
+        static_assert(Capacity >= 2, "Buffer size must be at least 2");
+
+    public:
+        RingBuffer() = default;
+
+        RingBuffer(const RingBuffer&) = delete;
+        RingBuffer& operator=(const RingBuffer&) = delete;
+
+        template <typename... Args>
+        bool emplace(Args&&... args)
+        {
+            const size_type seq = writeCursor.load(std::memory_order_relaxed);
+            /** Full when write is exactly N ahead of read **/
+            if (seq - cachedReadCursor >= static_cast<size_type>(Capacity))
+            {
+                cachedReadCursor = readCursor.load(std::memory_order_acquire);
+                if (seq - cachedReadCursor >= static_cast<size_type>(Capacity)) {
+                    return false; // full
+                }
+            }
+
+            // Construct the element directly in the slot
+            const std::size_t idx = seq & kMask;
+            buffer[idx].~value_type();
+            new (&buffer[idx]) value_type(std::forward<Args>(args)...);
+
+            // Publish: make the write visible to the consumer
+            writeCursor.store(seq + 1, std::memory_order_release);
+            return true;
+        }
+
+        bool push(const value_type& item)
+        {
+            const size_type seq = writeCursor.load(std::memory_order_relaxed);
+            /** Full when write is exactly N ahead of read **/
+            if (seq - cachedReadCursor >= static_cast<size_type>(Capacity))
+            {
+                cachedReadCursor = readCursor.load(std::memory_order_acquire);
+                if (seq - cachedReadCursor >= static_cast<size_type>(Capacity)) {
+                    return false; // full
+                }
+            }
+
+            // Construct the element directly in the slot
+            const std::size_t idx = seq & kMask;
+            buffer[idx] = item;
+
+            // Publish: make the write visible to the consumer
+            writeCursor.store(seq + 1, std::memory_order_release);
+            return true;
+        }
+
+        [[nodiscard]]
+        bool pop(value_type& item)
+        {
+            const size_type seq = readCursor.load(std::memory_order_relaxed);
+
+            // Empty when read has caught up to write
+            if (seq >= cachedWriteCursor)
+            {
+                // Refresh our cached copy of the write cursor
+                cachedWriteCursor = writeCursor.load(std::memory_order_acquire);
+                if (seq >= cachedWriteCursor) {
+                    return false;
+                }
+            }
+
+            // Read from the slot
+            const std::size_t idx = seq & kMask;
+            item = std::move(buffer[idx]);
+
+            // Advance read cursor
+            readCursor.store(seq + 1, std::memory_order_release);
+            return true;
+        }
+
+    private:
+        static constexpr std::size_t kMask { Capacity - 1 };
+
+        alignas(kCacheLineSize) std::array<value_type, Capacity> buffer{};
+
+        // Producer's cache line
+        alignas(kCacheLineSize) std::atomic<size_type> writeCursor { 0 };
+        size_type cachedReadCursor { 0 };  // producer's local cache
+
+        // Consumer's cache line
+        alignas(kCacheLineSize) std::atomic<size_type> readCursor { 0 };
+        size_type cachedWriteCursor { 0 }; // consumer's local cache
+    };
+
+    template<std::uint32_t Capacity>
+    class BookUpdatePool
+    {
+        using Index = std::uint32_t;
+        using FreeIndicesQueue = RingBuffer<Index, Capacity>;
+
+        static_assert(Capacity >= 2);
+        static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
+
+    public:
+        class Lease
+        {
+            friend class BookUpdatePool;
+
+        public:
+            Lease() = default;
+
+            Lease(const Lease&) = delete;
+            Lease& operator=(const Lease&) = delete;
+
+            Lease(Lease&& other) noexcept:
+                pool { std::exchange(other.pool, nullptr) },
+                index { std::exchange(other.index, 0) }
+            {
+            }
+
+            Lease& operator=(Lease&& other) noexcept
+            {
+                if (this != &other)
+                {
+                    reset();
+                    pool = std::exchange(other.pool, nullptr);
+                    index = std::exchange(other.index, 0);
+                }
+
+                return *this;
+            }
+
+            ~Lease(){
+                reset();
+            }
+
+            [[nodiscard]]
+            explicit operator bool() const noexcept{
+                return pool != nullptr;
+            }
+
+            BookUpdate& operator*() const noexcept {
+                return pool->objects[index];
+            }
+
+            BookUpdate* operator->() const noexcept {
+                return &pool->objects[index];
+            }
+
+        private:
+            Lease(BookUpdatePool* pool, const Index index) noexcept:
+                pool { pool }, index { index }
+            {
+            }
+
+            void reset() noexcept
+            {
+                if (pool != nullptr)
+                {
+                    pool->release(index);
+                    pool = nullptr;
+                }
+            }
+
+            BookUpdatePool* pool {};
+            Index index {};
+        };
+
+        explicit BookUpdatePool(const std::size_t initialUpdateCapacity = 0):
+            objects(Capacity)
+        {
+            for (Index index = 0; index < Capacity; ++index)
+            {
+                objects[index].updates.reserve(initialUpdateCapacity);
+                if (const bool inserted = freeIndices.emplace(index); !inserted)
+                {
+                    std::terminate();
+                }
+            }
+        }
+
+        BookUpdatePool(const BookUpdatePool&) = delete;
+        BookUpdatePool& operator=(const BookUpdatePool&) = delete;
+
+        [[nodiscard]]
+        Lease acquire() noexcept
+        {
+            Index index {};
+            if (!freeIndices.pop(index)){
+                return {};
+            }
+
+            return Lease { this, index };
+        }
+
+        [[nodiscard]]
+        static std::size_t size() noexcept
+        {
+            return Capacity;
+        }
+
+        [[nodiscard]]
+        std::size_t available() const noexcept
+        {
+            return Capacity - acquiredCount.load(std::memory_order_relaxed);
+        }
+
+    private:
+        void release(const Index index) noexcept
+        {
+            BookUpdate& update = objects[index];
+
+            update.updates.clear();
+            update.exchangeTimestamp = 0;
+            update.firstSequence = 0;
+            update.lastSequence = 0;
+
+            if (const bool inserted = freeIndices.emplace(index); !inserted){
+                std::terminate();
+            }
+        }
+
+        std::vector<BookUpdate> objects {};
+        FreeIndicesQueue freeIndices;
+
+        std::atomic<std::size_t> acquiredCount { 0 };
+    };
+}
+
 namespace perf_tests
 {
     using Clock = std::chrono::steady_clock;
@@ -281,8 +535,6 @@ namespace perf_tests
         bool closed {};
     };
 
-    using book_updates_pool::Side;
-    using book_updates_pool::BookUpdate;
     using book_updates_pool::BookUpdatePool;
 
     void produce(BookUpdate& update, const std::uint64_t sequence)
@@ -399,7 +651,7 @@ namespace perf_tests
         {
             for (std::uint64_t sequence = 1; sequence <= MessageCount; ++sequence)
             {
-                auto update = pool.acquire();
+                BookUpdatePool::Lease update = pool.acquire();
                 produce(*update, sequence);
                 queue.push(std::move(update));
                 if (sequence % 100'000 == 0){
@@ -430,17 +682,70 @@ namespace perf_tests
         return result;
     }
 
+    TestResult runScSpPool()
+    {
+        book_updates_scsp_pool::BookUpdatePool<64 * 1024> pool;
+        Queue<typename decltype(pool)::Lease> queue;
+
+        TestResult result;
+        result.name = "ScSpPool";
+
+        std::uint64_t checksum {};
+
+        const auto start = Clock::now();
+        std::thread producer([&queue, &pool, &result]
+        {
+            for (std::uint64_t sequence = 1; sequence <= MessageCount; ++sequence)
+            {
+                decltype(pool)::Lease update = pool.acquire();
+                produce(*update, sequence);
+                queue.push(std::move(update));
+                if (sequence % 100'000 == 0){
+                    result.maxQueueSize = std::max(result.maxQueueSize,queue.size());
+                }
+            }
+
+            queue.close();
+        });
+
+        decltype(pool)::Lease update;
+        while (queue.pop(update))
+        {
+            checksum += consume(*update);
+            ++result.messagesProcessed;
+
+            // Return the object to the pool.
+            update = {};
+        }
+
+        producer.join();
+
+        result.elapsedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
+        result.checksum = checksum;
+        result.poolSize = pool.size();
+
+        return result;
+    }
+
+
     void run()
     {
         std::cout << "BookUpdate Pool Benchmark\n";
         std::cout << "Messages: " << MessageCount << '\n';
         std::cout << "Update levels: " << UpdateLevelCount << '\n';
 
-        const TestResult baseline = runBaseline();
-        printResult(baseline);
-
-        const TestResult pool = runPool();
-        printResult(pool);
+        {
+            const TestResult baseline = runBaseline();
+            printResult(baseline);
+        }
+        {
+            const TestResult pool = runPool();
+            printResult(pool);
+        }
+        {
+            const TestResult pool = runScSpPool();
+            printResult(pool);
+        }
 
         std::cout << "\nDone\n";
     }
@@ -451,22 +756,33 @@ namespace perf_tests
     Update levels: 50
 
     Test: Baseline
-    Messages: 5000000
-    Elapsed: 3.171 seconds
-    Throughput: 1.57679e+06 messages/sec
-    Latency: 634.2 ns/message
-    Max queue size: 337
-    Pool size: 0
-    Checksum: 662512377500000
+    Messages      : 5000000
+    Elapsed       : 3.02299 seconds
+    Throughput    : 1.65399e+06 messages/sec
+    Latency       : 604.598 ns/message
+    Max queue size: 24
+    Pool size     : 0
+    Checksum      : 662512377500000
 
     Test: Pool
     Messages: 5000000
-    Elapsed: 1.74727 seconds
-    Throughput: 2.86161e+06 messages/sec
-    Latency: 349.453 ns/message
-    Max queue size: 16
-    Pool size: 2946
+    Elapsed: 1.71185 seconds
+    Throughput: 2.92082e+06 messages/sec
+    Latency: 342.369 ns/message
+    Max queue size: 1095
+    Pool size: 2289
     Checksum: 662512377500000
+
+    Test: ScSpPool
+    Messages: 5000000
+    Elapsed: 1.27169 seconds
+    Throughput: 3.93176e+06 messages/sec
+    Latency: 254.339 ns/message
+    Max queue size: 30323
+    Pool size: 65536
+    Checksum: 662512377500000
+
+    Done
 #endif
     
 }
