@@ -94,7 +94,7 @@ namespace
                 }*/
             });
 
-            ioContext.dispatch();
+            ioContext.run();
 
             return true;
         }
@@ -110,7 +110,7 @@ namespace
 
     void run()
     {
-        TestRestClient client {  "api.binance.com" };
+        TestRestClient client {  "testnet.binance.vision" };
 
         for (int i = 0; i < 3; ++i) {
             std::cout << std::string(140, '=') << std::endl;

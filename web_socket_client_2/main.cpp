@@ -54,10 +54,14 @@ int main([[maybe_unused]] const int argc,
     sslContext.set_default_verify_paths();
     sslContext.set_verify_mode(boost::asio::ssl::verify_peer);
 
+    const std::string wsBinanceRealHost { "stream.binance.com" };
+    const std::string wsBinanceTestnetHost { "stream.testnet.binance.vision" };
+
+
     networking::WebSocketClient client {
         ioContext,
         sslContext,
-        "stream.binance.com",
+        wsBinanceTestnetHost,
         "443",
         "/ws"
     };
