@@ -98,6 +98,9 @@ namespace trading
     [[nodiscard]]
     std::string_view toString(OrderType type) noexcept;
 
+    [[nodiscard]]
+    OrderStatus toOrderStatus(std::string_view status) noexcept;
+
 }
 
 #endif //EXCHANGECONNECTIVITY_ORDER_HPP

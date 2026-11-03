@@ -25,4 +25,26 @@ namespace trading
         }
         return {};
     }
+
+    [[nodiscard]]
+    OrderStatus toOrderStatus(const std::string_view status) noexcept
+    {
+        using namespace std::string_view_literals;
+        if (status == "NEW"sv) {
+            return OrderStatus::New;
+        }
+        if (status == "PARTIALLY_FILLED"sv) {
+            return OrderStatus::PartiallyFilled;
+        }
+        if (status == "FILLED"sv) {
+            return OrderStatus::Filled;
+        }
+        if (status == "CANCELED"sv || status == "CANCELLED"sv) {
+            return OrderStatus::Cancelled;
+        }
+        if (status == "REJECTED"sv) {
+            return OrderStatus::Rejected;
+        }
+        return OrderStatus::New;
+    }
 }
