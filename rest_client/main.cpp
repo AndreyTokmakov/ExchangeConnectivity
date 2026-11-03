@@ -106,18 +106,14 @@ namespace
         networking::RestClient restClient;
     };
 
-
-
     void run()
     {
         TestRestClient client {  "testnet.binance.vision" };
-
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 1; ++i) {
             std::cout << std::string(140, '=') << std::endl;
             const auto _ = client.sendRequest();
         }
     }
-
 }
 
 
