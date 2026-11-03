@@ -16,7 +16,9 @@ add_executable(${PROJECT_NAME}
         utilities.hpp
         utilities.cpp
         types.hpp
+        types.cpp
         order.hpp
+        order.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${THIRD_PARTY_DIR}/json/include)

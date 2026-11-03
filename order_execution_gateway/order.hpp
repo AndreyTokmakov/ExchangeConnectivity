@@ -95,6 +95,9 @@ namespace trading
         std::string message;
     };
 
+    [[nodiscard]]
+    std::string_view toString(OrderType type) noexcept;
+
 }
 
 #endif //EXCHANGECONNECTIVITY_ORDER_HPP

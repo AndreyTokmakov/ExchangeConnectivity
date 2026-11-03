@@ -213,6 +213,9 @@ namespace trading::common
         Buy,
         Sell
     };
+
+    [[nodiscard]]
+    std::string_view toString(Side side) noexcept;
 }
 
 #endif //EXCHANGECONNECTIVITY_TYPES_HPP

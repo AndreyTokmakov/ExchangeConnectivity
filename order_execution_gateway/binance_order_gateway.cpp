@@ -8,6 +8,7 @@ Description : binance_order_gateway.cpp
 ============================================================================**/
 
 #include "binance_order_gateway.hpp"
+#include "utilities.hpp"
 
 #include <openssl/hmac.h>
 #include <boost/json.hpp>
@@ -15,7 +16,6 @@ Description : binance_order_gateway.cpp
 
 #include <array>
 #include <chrono>
-#include <cstdint>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -40,17 +40,13 @@ namespace
     using trading::OrderStatus;
     using trading::binance_order_gateway::BinanceOrderGateway;
 
-
-
     constexpr std::uint64_t RecvWindow = 5000;
 
     [[nodiscard]]
     std::uint64_t unixTimestampMilliseconds() noexcept
     {
         const auto duration = std::chrono::system_clock::now().time_since_epoch();
-
-        return static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
+        return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
     }
 
     [[nodiscard]]
@@ -107,69 +103,11 @@ namespace
     }
 
     [[nodiscard]]
-    std::string_view toBinanceSide(const Side side) noexcept
-    {
-        switch (side)
-        {
-            case Side::Buy:
-                return "BUY"sv;
-            case Side::Sell:
-                return "SELL"sv;
-        }
-        return {};
-    }
-
-    [[nodiscard]]
-    std::string_view toBinanceOrderType(const OrderType type) noexcept
-    {
-        switch (type)
-        {
-            case OrderType::Market:
-                return "MARKET"sv;
-            case OrderType::Limit:
-                return "LIMIT"sv;
-        }
-        return {};
-    }
-
-    [[nodiscard]]
-    std::string urlEncode(const std::string_view value)
-    {
-        constexpr char Hex[] = "0123456789ABCDEF";
-
-        std::string result;
-        result.reserve(value.size() * 3);
-
-        for (const unsigned char character : value)
-        {
-            const bool unreserved =
-                (character >= 'A' && character <= 'Z') ||
-                (character >= 'a' && character <= 'z') ||
-                (character >= '0' && character <= '9') ||
-                character == '-' ||
-                character == '_' ||
-                character == '.' ||
-                character == '~';
-
-            if (unreserved) {
-                result.push_back(static_cast<char>(character));
-            }
-            else {
-                result.push_back('%');
-                result.push_back(Hex[character >> 4]);
-                result.push_back(Hex[character & 0x0F]);
-            }
-        }
-
-        return result;
-    }
-
-    [[nodiscard]]
     std::string createSignature(const std::string_view payload,
                                 const std::string_view secretKey)
     {
         std::array<unsigned char, EVP_MAX_MD_SIZE> digest {};
-        unsigned int digestLength = 0;
+        uint32_t digestLength = 0;
 
         const unsigned char* result = HMAC(
             EVP_sha256(),
@@ -204,9 +142,9 @@ namespace
                             const std::string_view symbol)
     {
         std::ostringstream query;
-        query << "symbol=" << urlEncode(symbol)
-              << "&side=" << toBinanceSide(request.side)
-              << "&type=" << toBinanceOrderType(request.type)
+        query << "symbol=" << utilities::urlEncode(symbol)
+              << "&side=" << toString(request.side)
+              << "&type=" << toString(request.type)
               << "&quantity=" << toString(request.quantity)
               << "&newClientOrderId=" << clientOrderId;
 
@@ -340,12 +278,19 @@ namespace
 namespace trading::binance_order_gateway
 {
     BinanceOrderGateway::BinanceOrderGateway(networking::RestClient& restClient,
-                                             ApiCredentials credentials):
-            restClient { restClient },
-            credentials { std::move(credentials) }
+                                             ApiCredentials credentials,
+                                             std::string host,
+                                             const uint16_t port,
+                                             std::string order_endpoint,
+                                             std::string symbol):
+        restClient { restClient },
+        credentials { std::move(credentials) },
+        host { std::move(host) },
+        port { port },
+        orderEndpoint { std::move(order_endpoint)},
+        symbol { std::move(symbol)}
     {
     }
-
     void BinanceOrderGateway::sendOrder(const OrderRequest& request,
                                         const OrderId clientOrderId,
                                         ResponseHandler handler)

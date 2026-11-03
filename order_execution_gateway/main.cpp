@@ -75,7 +75,7 @@ namespace
         };
 
         // Example: LIMIT BUY BTCUSDT at 50,000 USDT, quantity 1 BTC.
-        trading::OrderRequest request {
+        constexpr trading::OrderRequest request {
             .instrument = 0,
             .side = Side::Buy,
             .type = trading::OrderType::Limit,

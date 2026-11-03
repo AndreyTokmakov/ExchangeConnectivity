@@ -15,6 +15,7 @@ Description : binance_order_gateway.hpp
 
 #include <expected>
 #include <functional>
+#include <utility>
 
 namespace trading::binance_order_gateway
 {
@@ -32,7 +33,11 @@ namespace trading::binance_order_gateway
         using ResponseHandler = std::function<void(Response)>;
 
         BinanceOrderGateway(networking::RestClient& restClient,
-                            ApiCredentials credentials);
+                            ApiCredentials credentials,
+                            std::string host = std::string{"testnet.binance.vision"},
+                            uint16_t port = 443,
+                            std::string order_endpoint = std::string{"/api/v3/order"},
+                            std::string symbol = std::string{"BTCUSDT"});
 
         BinanceOrderGateway(const BinanceOrderGateway&) = delete;
         BinanceOrderGateway& operator=(const BinanceOrderGateway&) = delete;
@@ -40,15 +45,15 @@ namespace trading::binance_order_gateway
         void sendOrder(const OrderRequest& request,
                        OrderId clientOrderId,
                        ResponseHandler handler);
-
     private:
+
         networking::RestClient& restClient;
         ApiCredentials credentials;
 
-        std::string host = "testnet.binance.vision";
-        uint16_t port = 443;
-        std::string orderEndpoint = "/api/v3/order";
-        std::string symbol = "BTCUSDT";
+        std::string host;
+        uint16_t port;
+        std::string orderEndpoint;
+        std::string symbol;
     };
 }
 
