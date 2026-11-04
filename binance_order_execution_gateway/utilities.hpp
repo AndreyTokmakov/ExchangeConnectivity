@@ -12,11 +12,15 @@ Description : utilities.hpp
 
 #include <string>
 #include <string_view>
+#include <span>
 
 namespace utilities
 {
     [[nodiscard]]
     std::string urlEncode(std::string_view value);
+
+    [[nodiscard]]
+    std::string toHex(const std::span<const unsigned char> data);
 }
 
 #endif //EXCHANGECONNECTIVITY_UTILITIES_HPP

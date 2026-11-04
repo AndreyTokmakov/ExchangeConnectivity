@@ -10,8 +10,8 @@ Description : binance_order_gateway.cpp
 #include "binance_order_gateway.hpp"
 #include "utilities.hpp"
 
+#include <simdjson.h>
 #include <openssl/hmac.h>
-#include <boost/json.hpp>
 #include <boost/beast/http/verb.hpp>
 
 #include <array>
@@ -21,6 +21,7 @@ Description : binance_order_gateway.cpp
 #include <string>
 #include <string_view>
 #include <utility>
+#include <format>
 
 namespace
 {
@@ -123,17 +124,7 @@ namespace
             return {};
         }
 
-        std::string signature;
-        signature.reserve(digestLength * 2);
-
-        for (unsigned int index = 0; index < digestLength; ++index)
-        {
-            constexpr char Hex[] = "0123456789abcdef";
-            signature.push_back(Hex[digest[index] >> 4]);
-            signature.push_back(Hex[digest[index] & 0x0F]);
-        }
-
-        return signature;
+        return utilities::toHex(std::span { digest.data(), digestLength });
     }
 
     [[nodiscard]]
@@ -141,19 +132,20 @@ namespace
                             const OrderId clientOrderId,
                             const std::string_view symbol)
     {
-        std::ostringstream query;
-        query << "symbol=" << utilities::urlEncode(symbol)
-              << "&side=" << toString(request.side)
-              << "&type=" << toString(request.type)
-              << "&quantity=" << toString(request.quantity)
-              << "&newClientOrderId=" << clientOrderId;
+        std::string query = std::format("symbol={}&side={}&type={}&quantity={}&newClientOrderId={}",
+            utilities::urlEncode(symbol),
+            toString(request.side),
+            toString(request.type),
+            toString(request.quantity),
+            clientOrderId
+        );
 
         if (request.type == OrderType::Limit) {
-            query << "&price=" << toString(request.price)<< "&timeInForce=GTC";
+            query += std::format("&price={}&timeInForce=GTC", toString(request.price));
         }
-        query << "&recvWindow=" << RecvWindow << "&timestamp=" << unixTimestampMilliseconds();
 
-        return query.str();
+        query += std::format("&recvWindow={}&timestamp={}",RecvWindow, unixTimestampMilliseconds());
+        return query;
     }
 
     [[nodiscard]]
@@ -169,40 +161,37 @@ namespace
     }
 
     [[nodiscard]]
-    std::string getJsonString(const boost::json::value& json,
+    std::string getJsonString(const simdjson::dom::element& json,
                               const std::string_view key)
     {
-        if (!json.is_object()) {
+        std::string_view value;
+        if (json[key].get_string().get(value)) {
             return {};
         }
 
-        const boost::json::value* value = json.as_object().if_contains(key);
-        if (nullptr == value || !value->is_string()) {
-            return {};
-        }
-
-        return std::string(value->as_string());
+        return std::string { value };
     }
 
     [[nodiscard]]
-    std::uint64_t getJsonUint64(const boost::json::value& json,
+    std::uint64_t getJsonUint64(const simdjson::dom::element& json,
                                 const std::string_view key)
     {
-        if (!json.is_object()) {
-            return 0;
+        if (std::uint64_t value = 0; !json[key].get_uint64().get(value)) {
+            return value;
         }
+        if (std::int64_t signedValue = 0; !json[key].get_int64().get(signedValue) && signedValue >= 0) {
+            return static_cast<std::uint64_t>(signedValue);
+        }
+        return 0;
+    }
 
-        const boost::json::value* value = json.as_object().if_contains(key);
-        if (nullptr == value) {
-            return 0;
+    [[nodiscard]]
+    std::int64_t getJsonInt64(const simdjson::dom::element& json,
+                          const std::string_view key)
+    {
+        if (std::int64_t value = 0; !json[key].get_int64().get(value)) {
+            return value;
         }
-        if (value->is_uint64()) {
-            return value->as_uint64();
-        }
-        if (value->is_int64() && value->as_int64() >= 0) {
-            return static_cast<std::uint64_t>(value->as_int64());
-        }
-
         return 0;
     }
 
@@ -210,39 +199,43 @@ namespace
     BinanceOrderGateway::Response parseResponse(const trading::networking::HttpResponse& response,
                                                 const OrderId clientOrderId)
     {
-        boost::system::error_code errorCode;
+        simdjson::dom::parser parser;
+        simdjson::dom::element json;
 
-        const boost::json::value json = boost::json::parse(response.body, errorCode);
+        const simdjson::error_code errorCode = parser.parse(response.body).get(json);
+        if (errorCode != simdjson::SUCCESS)
+        {
+            return std::unexpected { makeError(OrderSubmissionErrorCode::InvalidResponse,
+                std::format("Invalid Binance JSON response: {}", simdjson::error_message(errorCode))
+            )};
+        }
 
-        if (errorCode || !json.is_object()) {
-            return std::unexpected { makeError(
-                OrderSubmissionErrorCode::InvalidResponse,
-                "Invalid Binance response: " + errorCode.message()) };
+        if (!json.is_object())
+        {
+            return std::unexpected { makeError(OrderSubmissionErrorCode::InvalidResponse,
+                "Binance response is not a JSON object"
+            )};
         }
 
         if (response.status < 200 || response.status >= 300)
         {
-            const std::int64_t exchangeErrorCode =
-                json.as_object().if_contains("code") &&
-                json.as_object().at("code").is_int64()
-                    ? json.as_object().at("code").as_int64()
-                    : 0;
-
+            const std::int64_t exchangeErrorCode = getJsonInt64(json, "code");
             const std::string message = getJsonString(json, "msg");
 
-            return std::unexpected { makeError(
-                OrderSubmissionErrorCode::ExchangeRejected,
+            return std::unexpected { makeError(OrderSubmissionErrorCode::ExchangeRejected,
                 message.empty() ? "Binance rejected order" : message,
-                exchangeErrorCode) };
+                exchangeErrorCode
+            )};
         }
 
         const std::uint64_t exchangeOrderId = getJsonUint64(json, "orderId");
         const std::string status = getJsonString(json, "status");
 
-        if (exchangeOrderId == 0 || status.empty()) {
-            return std::unexpected { makeError(
-                OrderSubmissionErrorCode::InvalidResponse,
-                "Binance response does not contain orderId or status") };
+        if (exchangeOrderId == 0 || status.empty())
+        {
+            return std::unexpected { makeError( OrderSubmissionErrorCode::InvalidResponse,
+                "Binance response does not contain orderId or status"
+            )};
         }
 
         return OrderSubmission {
@@ -276,21 +269,15 @@ namespace trading::binance_order_gateway
         if (!handler) {
             return;
         }
-        if (clientOrderId == 0 || request.quantity.raw() <= 0 ||
-            (request.type == OrderType::Limit && request.price.raw() <= 0))
-        {
+        if (clientOrderId == 0 || request.quantity.raw() <= 0 || (request.type == OrderType::Limit && request.price.raw() <= 0)) {
             handler(std::unexpected { makeError(OrderSubmissionErrorCode::InvalidOrder,"Invalid order parameters") });
             return;
         }
-
-        if (credentials.apiKey.empty() || credentials.secretKey.empty())
-        {
+        if (credentials.apiKey.empty() || credentials.secretKey.empty()) {
             handler(std::unexpected { makeError(OrderSubmissionErrorCode::SigningFailed,"Binance API credentials are empty") });
             return;
         }
-
-        if (symbol.empty())
-        {
+        if (symbol.empty()) {
             handler(std::unexpected { makeError(OrderSubmissionErrorCode::InvalidInstrument,"Unknown instrument") });
             return;
         }
@@ -298,8 +285,7 @@ namespace trading::binance_order_gateway
         const std::string query = createQuery(request, clientOrderId, symbol);
         const std::string signature = createSignature(query, credentials.secretKey);
 
-        if (signature.empty())
-        {
+        if (signature.empty()) {
             handler(std::unexpected { makeError(OrderSubmissionErrorCode::SigningFailed,"Failed to create HMAC SHA256 signature") });
             return;
         }

@@ -39,4 +39,16 @@ namespace utilities
         }
         return result;
     }
+
+    [[nodiscard]]
+    std::string toHex(const std::span<const unsigned char> data)
+    {
+        std::string result;
+        result.reserve(data.size() * 2);
+        for (const unsigned char value : data) {
+            result.push_back(HexDigits[value >> 4]);
+            result.push_back(HexDigits[value & 0x0F]);
+        }
+        return result;
+    }
 }
