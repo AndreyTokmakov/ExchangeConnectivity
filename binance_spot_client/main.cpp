@@ -76,7 +76,7 @@ namespace
             .instrument = 0,
             .side = Side::Buy,
             .type = trading::OrderType::Limit,
-            .price = Price::fromInteger(100'000),
+            .price = Price::fromInteger(75'000),
             .quantity = Quantity { 100'000 } // 0.001 BTC
         };
 
@@ -92,9 +92,9 @@ namespace
             std::cout << "Order submitted\n"
                       << "Exchange order ID: " << response->exchangeOrderId << '\n'
                       << "Status: " << static_cast<int>(response->status) << '\n';
-        });
-        */
+        });*/
 
+        /*
         client.getBalances([](BinanceSpotClient::BalancesResponse response)
         {
             if (!response) {
@@ -105,8 +105,10 @@ namespace
                 std::cout << balance.asset << " | free: " << balance.free << " | locked: " << balance.locked << '\n';
             }
         });
+        */
 
-        /*
+
+        constexpr uint64_t exchangeOrderId = 10887393;
         client.cancelOrder(exchangeOrderId,[](BinanceSpotClient::CancelResponse response)
         {
             if (!response) {
@@ -115,7 +117,6 @@ namespace
             }
             std::cout << "Order cancelled\n" << "Exchange order ID: " << response->exchangeOrderId << '\n';
         });
-        */
 
         ioContext.run();
     }
