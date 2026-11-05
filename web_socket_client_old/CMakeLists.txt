@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 set(CMAKE_CXX_STANDARD 26)
 
-project(binance_order_execution_gateway)
+project(web_socket_client_old)
 set(PROJECT_VERSION 1.0.0.0)
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION} LANGUAGES CXX)
 
@@ -9,16 +9,8 @@ add_compile_options(-c -Wall -O3 -std=c++26)
 
 add_executable(${PROJECT_NAME}
         main.cpp
-        rest_client.cpp
-        rest_client.hpp
-        binance_order_gateway.cpp
-        binance_order_gateway.hpp
-        utilities.hpp
-        utilities.cpp
-        types.hpp
-        types.cpp
-        order.hpp
-        order.cpp
+        web_socket_client.cpp
+        web_socket_client.hpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${THIRD_PARTY_DIR}/json/include)
@@ -34,6 +26,7 @@ target_link_libraries(${PROJECT_NAME}
         pthread
         Boost::asio
         Boost::beast
+        Boost::json
         crypto
         ssl
         ${EXTRA_LIBS}

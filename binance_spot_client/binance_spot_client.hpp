@@ -86,12 +86,13 @@ namespace trading::binance
 
     private:
         using RestResponse = networking::RestClient::Response;
-        using RestResponseHandler = std::function<void(RestResponse)>;
+        using ApiResponse = std::expected<networking::HttpResponse, BinanceApiError>;
+        using ApiResponseHandler = std::function<void(ApiResponse)>;
 
         void asyncSignedRequest(boost::beast::http::verb method,
                                 std::string endpoint,
                                 std::string query,
-                                RestResponseHandler handler);
+                                ApiResponseHandler handler);
 
         networking::RestClient& restClient;
         ApiCredentials credentials;

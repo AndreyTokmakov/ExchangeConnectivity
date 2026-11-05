@@ -9,19 +9,25 @@ Description : web_socket_client.cpp
 
 #include "web_socket_client.hpp"
 
+
+#include <boost/asio/bind_executor.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/ssl/host_name_verification.hpp>
 #include <boost/asio/ssl/stream_base.hpp>
+#include <boost/asio/strand.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
 
 #include <openssl/ssl.h>
 
+#include <deque>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace
@@ -32,9 +38,6 @@ namespace
     namespace ssl = net::ssl;
 
     using Tcp = net::ip::tcp;
-
-    constexpr char BinanceHost[] = "stream.binance.com";
-    constexpr char HttpsPort[] = "443";
 }
 
 namespace networking
@@ -46,132 +49,239 @@ namespace networking
 
         WebSocketSession(net::io_context& ioContext,
                          ssl::context& sslContext,
-                         std::string streamName,
-                         MessageHandler handler):
-            resolver { ioContext },
-            stream { ioContext, sslContext },
-            streamName { std::move(streamName) },
-            handler { std::move(handler) }
+                         std::string host,
+                         std::string port,
+                         std::string target,
+                         MessageHandler handler)
+            : strand { net::make_strand(ioContext) },
+              resolver { ioContext },
+              stream { ioContext, sslContext },
+              host { std::move(host) },
+              port { std::move(port) },
+              target { std::move(target) },
+              handler { std::move(handler) }
         {
         }
 
         void start()
         {
-            resolver.async_resolve(BinanceHost, HttpsPort,
-                [self = shared_from_this()](const beast::error_code& errorCode, const Tcp::resolver::results_type& endpoints)
-            {
-                if (errorCode) {
-                    self->reportError("WebSocket resolve failed", errorCode);
+            net::post(strand, [self = shared_from_this()] {
+                if (State::Idle != self->state) {
                     return;
                 }
-                beast::get_lowest_layer(self->stream).async_connect(endpoints, [self](const beast::error_code& connectError, const Tcp::endpoint&)
-                {
-                    if (connectError) {
-                        self->reportError("WebSocket connect failed", connectError);
-                        return;
-                    }
-                    self->onConnected();
-                });
+                self->state = State::Connecting;
+                self->resolve();
+            });
+        }
+
+        void send(std::string message)
+        {
+            net::post(strand, [self = shared_from_this(), message = std::move(message)]() mutable {
+                if (State::Stopped == self->state) {
+                    return;
+                }
+                self->outgoingMessages.push_back(std::move(message));
+                self->write();
             });
         }
 
         void stop()
         {
-            beast::error_code errorCode;
-            auto _ = beast::get_lowest_layer(stream).socket().cancel(errorCode);
-            _ = beast::get_lowest_layer(stream).socket().close(errorCode);
+            net::post(strand, [self = shared_from_this()] {
+                self->stopNow();
+            });
         }
 
     private:
-        void onConnected()
+        enum class State : std::uint8_t
         {
-            if (SSL_set_tlsext_host_name(stream.next_layer().native_handle(), BinanceHost) != 1) {
-                std::cerr << "Failed to configure TLS SNI\n";
-                stop();
+            Idle,
+            Connecting,
+            Connected,
+            Stopped
+        };
+
+        void resolve()
+        {
+            resolver.async_resolve(host, port, net::bind_executor(strand,
+                beast::bind_front_handler(&WebSocketSession::onResolve, shared_from_this())
+            ));
+        }
+
+        void onResolve(const beast::error_code& errorCode,
+                       const Tcp::resolver::results_type& endpoints)
+        {
+            if (State::Connecting != state) {
+                return;
+            }
+            if (errorCode) {
+                fail("WebSocket resolve failed", errorCode);
                 return;
             }
 
-            stream.next_layer().set_verify_callback(ssl::host_name_verification(BinanceHost));
-            stream.next_layer().async_handshake(ssl::stream_base::client,
-                [self = shared_from_this()](const beast::error_code& errorCode)
-            {
-                if (errorCode) {
-                    self->reportError("WebSocket TLS handshake failed", errorCode);
-                    return;
-                }
-                self->onTlsHandshake();
-            });
+            beast::get_lowest_layer(stream).async_connect(endpoints, net::bind_executor(strand,
+                beast::bind_front_handler(&WebSocketSession::onConnect, shared_from_this())
+            ));
         }
 
-        void onTlsHandshake()
+        void onConnect(const beast::error_code& errorCode, const Tcp::endpoint&)
         {
-            stream.async_handshake(BinanceHost, "/ws",[self = shared_from_this()](const beast::error_code& errorCode){
-                if (errorCode) {
-                    reportError("WebSocket handshake failed", errorCode);
-                    return;
-                }
-                self->subscribe();
-            });
+            if (State::Connecting != state) {
+                return;
+            }
+            if (errorCode) {
+                return fail("WebSocket connect failed", errorCode);
+            }
+            if (SSL_set_tlsext_host_name(stream.next_layer().native_handle(), host.c_str()) != 1) {
+                std::cerr << "Failed to configure TLS SNI for " << host << '\n';
+                stopNow();
+                return;
+            }
+
+            stream.next_layer().set_verify_callback(ssl::host_name_verification(host));
+            stream.next_layer().async_handshake(ssl::stream_base::client, net::bind_executor(strand,
+                beast::bind_front_handler(&WebSocketSession::onTlsHandshake, shared_from_this())
+            ));
         }
 
-        void subscribe()
+        void onTlsHandshake(const beast::error_code& errorCode)
         {
-            subscription = R"({"method":"SUBSCRIBE","params":[")" + streamName + R"("],"id":1})";
-            subscription = R"({"method":"SUBSCRIBE","params":[")" + streamName + R"("],"id":1})";
+            if (State::Connecting != state) {
+                return;
+            }
+            if (errorCode) {
+                return fail("WebSocket TLS handshake failed", errorCode);
+            }
 
-            stream.async_write(net::buffer(subscription),
-                [self = shared_from_this()](const beast::error_code& errorCode, std::size_t)
-            {
-                if (errorCode) {
-                    reportError("WebSocket subscription failed", errorCode);
-                    return;
-                }
-                self->read();
-            });
+            stream.set_option(websocket::stream_base::timeout::suggested(beast::role_type::client));
+            stream.async_handshake(host, target, net::bind_executor(strand,
+                beast::bind_front_handler(&WebSocketSession::onHandshake, shared_from_this())
+            ));
+        }
+
+        void onHandshake(const beast::error_code& errorCode)
+        {
+            if (State::Connecting != state) {
+                return;
+            }
+            if (errorCode) {
+                return fail("WebSocket handshake failed", errorCode);
+            }
+
+            state = State::Connected;
+            read();
+            write();
         }
 
         void read()
         {
-            stream.async_read(buffer,[self = shared_from_this()](const beast::error_code& errorCode, std::size_t)
-            {
-                if (errorCode) {
-                    if (errorCode != websocket::error::closed && errorCode != net::error::operation_aborted) {
-                        reportError("WebSocket read failed", errorCode);
-                    }
-                    return;
-                }
-
-                std::string message = beast::buffers_to_string(self->buffer.data());
-                self->buffer.consume(self->buffer.size());
-
-                if (self->handler) {
-                    self->handler(std::move(message));
-                }
-                self->read();
-            });
+            if (State::Connected != state) {
+                return;
+            }
+            stream.async_read(buffer, net::bind_executor(strand,
+                beast::bind_front_handler(&WebSocketSession::onRead, shared_from_this())
+            ));
         }
 
-        static void reportError(const std::string_view operation, const beast::error_code& errorCode)
+        void onRead(const beast::error_code& errorCode, std::size_t)
+        {
+            if (State::Connected != state) {
+                return;
+            }
+
+            if (errorCode) {
+                if (errorCode != websocket::error::closed) {
+                    fail("WebSocket read failed", errorCode);
+                }
+                else {
+                    stopNow();
+                }
+                return;
+            }
+
+            std::string message = beast::buffers_to_string(buffer.data());
+            buffer.consume(buffer.size());
+
+            if (handler) {
+                handler(std::move(message));
+            }
+
+            read();
+        }
+
+        void write()
+        {
+            if (State::Connected != state || writing || outgoingMessages.empty()) {
+                return;
+            }
+
+            writing = true;
+            stream.async_write(net::buffer(outgoingMessages.front()), net::bind_executor(strand,
+                beast::bind_front_handler(&WebSocketSession::onWrite, shared_from_this())
+            ));
+        }
+
+        void onWrite(const beast::error_code& errorCode, std::size_t)
+        {
+            if (State::Stopped == state) {
+                return;
+            }
+            writing = false;
+            if (errorCode) {
+                fail("WebSocket write failed", errorCode);
+                return;
+            }
+
+            outgoingMessages.pop_front();
+            write();
+        }
+
+        void fail(const std::string_view operation, const beast::error_code& errorCode)
         {
             if (errorCode != net::error::operation_aborted) {
                 std::cerr << operation << ": " << errorCode.message() << '\n';
             }
+            stopNow();
         }
 
+        void stopNow()
+        {
+            if (State::Stopped == state) {
+                return;
+            }
+
+            state = State::Stopped;
+            writing = false;
+            outgoingMessages.clear();
+            resolver.cancel();
+
+            beast::error_code error;
+            const auto _ = beast::get_lowest_layer(stream).socket().close(error);
+        }
+
+        net::strand<net::io_context::executor_type> strand;
         Tcp::resolver resolver;
         websocket::stream<beast::ssl_stream<beast::tcp_stream>> stream;
         beast::flat_buffer buffer;
-        std::string streamName;
-        std::string subscription;
+        std::string host;
+        std::string port;
+        std::string target;
         MessageHandler handler;
+        std::deque<std::string> outgoingMessages;
+        State state { State::Idle };
+        bool writing { false };
     };
 
     WebSocketClient::WebSocketClient(net::io_context& ioContext,
-                                                   ssl::context& sslContext,
-                                                   std::string streamName)
+                                     ssl::context& sslContext,
+                                     std::string host,
+                                     std::string port,
+                                     std::string target)
         : ioContext(ioContext),
           sslContext(sslContext),
-          streamName(std::move(streamName))
+          host(std::move(host)),
+          port(std::move(port)),
+          target(std::move(target))
     {
     }
 
@@ -183,8 +293,24 @@ namespace networking
     void WebSocketClient::start(MessageHandler handler)
     {
         stop();
-        session = std::make_shared<WebSocketSession>(ioContext, sslContext, streamName, std::move(handler));
+
+        session = std::make_shared<WebSocketSession>(
+            ioContext,
+            sslContext,
+            host,
+            port,
+            target,
+            std::move(handler)
+        );
+
         session->start();
+    }
+
+    void WebSocketClient::send(std::string message) const
+    {
+        if (session) {
+            session->send(std::move(message));
+        }
     }
 
     void WebSocketClient::stop()

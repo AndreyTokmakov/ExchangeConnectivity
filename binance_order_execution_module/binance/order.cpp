@@ -1,0 +1,50 @@
+/**============================================================================
+Name        : order.cpp
+Created on  : 03.11.2026
+Author      : Andrei Tokmakov
+Version     : 1.0
+Copyright   : Your copyright notice
+Description : order.cpp
+============================================================================**/
+
+#include "order.hpp"
+
+namespace trading
+{
+    using namespace std::string_view_literals;
+
+    [[nodiscard]]
+    std::string_view toString(const OrderType type) noexcept
+    {
+        switch (type)
+        {
+            case OrderType::Market:
+                return "MARKET"sv;
+            case OrderType::Limit:
+                return "LIMIT"sv;
+        }
+        return {};
+    }
+
+    [[nodiscard]]
+    OrderStatus toOrderStatus(const std::string_view status) noexcept
+    {
+        using namespace std::string_view_literals;
+        if (status == "NEW"sv) {
+            return OrderStatus::New;
+        }
+        if (status == "PARTIALLY_FILLED"sv) {
+            return OrderStatus::PartiallyFilled;
+        }
+        if (status == "FILLED"sv) {
+            return OrderStatus::Filled;
+        }
+        if (status == "CANCELED"sv || status == "CANCELLED"sv || status == "EXPIRED"sv) {
+            return OrderStatus::Cancelled;
+        }
+        if (status == "REJECTED"sv) {
+            return OrderStatus::Rejected;
+        }
+        return OrderStatus::New;
+    }
+}

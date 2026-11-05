@@ -28,21 +28,26 @@ namespace networking
 
         WebSocketClient(boost::asio::io_context& ioContext,
                         boost::asio::ssl::context& sslContext,
-                        std::string streamName);
+                        std::string host,
+                        std::string port,
+                        std::string target);
         ~WebSocketClient();
 
         WebSocketClient(const WebSocketClient&) = delete;
         WebSocketClient& operator=(const WebSocketClient&) = delete;
 
         void start(MessageHandler handler);
+        void send(std::string message) const;
         void stop();
 
     private:
         boost::asio::io_context& ioContext;
         boost::asio::ssl::context& sslContext;
-        std::string streamName;
+        std::string host;
+        std::string port;
+        std::string target;
         std::shared_ptr<WebSocketSession> session;
     };
 }
 
-#endif //EXCHANGECONNECTIVITY_WEB_SOCKET_CLIENT_HPP
+#endif // EXCHANGECONNECTIVITY_WEB_SOCKET_CLIENT_HPP

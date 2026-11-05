@@ -15,6 +15,7 @@ Description : Binance
 #include <algorithm>
 #include <vector>
 #include <filesystem>
+#include <thread>
 
 #include "web_socket_client.hpp"
 
@@ -41,43 +42,53 @@ namespace
     }
 
     #define LOG  std::osyncstream { std::cout } << getCurrentTime() << " "
-
-    [[nodiscard]]
-    std::string toLower(std::string value)
-    {
-        std::ranges::transform(value, value.begin(),[](const unsigned char character){
-            return static_cast<char>(std::tolower(character));
-        });
-        return value;
-    }
-
-    void onMessage(const std::string_view message)
-    {
-        LOG << message << std::endl;
-    }
-
 }
 
 int main([[maybe_unused]] const int argc,
          [[maybe_unused]] char** argv)
 {
     const std::vector<std::string_view> args(argv + 1, argv + argc);
-    using networking::WebSocketClient;
-
-    const std::string symbol { "BTCUSDT"  };
 
     boost::asio::io_context ioContext;
     boost::asio::ssl::context sslContext { boost::asio::ssl::context::tls_client };
+    sslContext.set_default_verify_paths();
+    sslContext.set_verify_mode(boost::asio::ssl::verify_peer);
 
-    const std::unique_ptr<WebSocketClient> wsDepthClient = std::make_unique<WebSocketClient>(
-        ioContext, sslContext, toLower(symbol) + "@depth@100ms"
-    );
+    const std::string wsBinanceRealHost { "stream.binance.com" };
+    const std::string wsBinanceTestnetHost { "stream.testnet.binance.vision" };
 
-    wsDepthClient->start([](const std::string& message){
-        onMessage(message);
+
+    networking::WebSocketClient client {
+        ioContext,
+        sslContext,
+        wsBinanceTestnetHost,
+        "443",
+        "/ws"
+    };
+
+    client.start([](const std::string& message) {
+        std::cout << message << '\n';
     });
 
-    ioContext.run();
+    std::jthread ioThread { [&ioContext] {
+        ioContext.run();
+    } };
+
+    // Wait until the WebSocket connection is established.
+    // The current WebSocketClient API does not expose connection status.
+    std::this_thread::sleep_for(std::chrono::seconds { 1 });
+
+    client.send(R"({
+        "method": "SUBSCRIBE",
+        "params": ["btcusdt@depth"],
+        "id": 1
+    })");
+
+    std::cout << "Subscribed to BTCUSDT depth stream. Press Enter to stop.\n";
+    std::cin.get();
+
+    client.stop();
+    ioContext.stop();
 
     return EXIT_SUCCESS;
 }
