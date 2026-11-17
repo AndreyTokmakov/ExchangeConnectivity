@@ -23,7 +23,7 @@ Description : rest_client.cpp
 #include <openssl/ssl.h>
 
 #include <chrono>
-#include <cstdint>
+#include <future>
 #include <memory>
 #include <string>
 #include <utility>
@@ -282,6 +282,26 @@ namespace networking
     }
 
     RestClient::~RestClient() = default;
+
+    RestClient::Response RestClient::request(HttpRequest& request) const
+    {
+        if (ioContext.get_executor().running_in_this_thread())
+        {
+            return std::unexpected { RestFailure {
+                .error = RestError::InvalidRequest,
+                .message = "Synchronous request cannot be called from an io_context thread"
+            }};
+        }
+
+        auto promise = std::make_shared<std::promise<Response>>();
+        std::future<Response> future = promise->get_future();
+
+        asyncRequest(request, [promise](Response response){
+            promise->set_value(std::move(response));
+        });
+
+        return future.get();
+    }
 
     void RestClient::asyncRequest(HttpRequest& request, ResponseHandler handler) const
     {

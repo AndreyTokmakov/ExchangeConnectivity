@@ -84,7 +84,7 @@ namespace
         [[maybe_unused]]
         constexpr trading::OrderId clientOrderId = 10001;
 
-#if 1
+#if 0
         const BalancesResponse balances = client.getBalances();
         if (balances.has_value())
         {
@@ -103,7 +103,7 @@ namespace
         }
 #endif
 #if 1
-        constexpr uint64_t exchangeOrderId = 13720986;
+        constexpr uint64_t exchangeOrderId = 14992838;
         const CancelResponse cancelResponse = client.cancelOrder(exchangeOrderId);
         if (cancelResponse.has_value()) {
             std::cout << "Order cancelled\n" << "Exchange order ID: " << cancelResponse->exchangeOrderId << '\n';

@@ -132,11 +132,8 @@ namespace
             // const auto _ = client.sendRequestAsync();
             std::cout << std::string(140, '=') << std::endl;
         }
-
     }
 }
-
-
 
 int main([[maybe_unused]] const int argc,
          [[maybe_unused]] char** argv)
@@ -146,4 +143,3 @@ int main([[maybe_unused]] const int argc,
 
     return EXIT_SUCCESS;
 }
-

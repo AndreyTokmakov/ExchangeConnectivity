@@ -23,7 +23,6 @@ Description : rest_client.cpp
 #include <openssl/ssl.h>
 
 #include <chrono>
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -298,7 +297,6 @@ namespace networking
         std::future<Response> future = promise->get_future();
 
         asyncRequest(request, [promise](Response response){
-            std::cout << response.value().body << std::endl;
             promise->set_value(std::move(response));
         });
 
