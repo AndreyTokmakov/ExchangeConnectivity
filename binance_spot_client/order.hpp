@@ -33,7 +33,8 @@ namespace trading
         PartiallyFilled,
         Filled,
         Cancelled,
-        Rejected
+        Rejected,
+        Unknown,
     };
 
     enum class ExecType : uint8_t

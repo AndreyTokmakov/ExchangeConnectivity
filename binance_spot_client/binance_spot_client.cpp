@@ -40,24 +40,17 @@ namespace
     using trading::OrderType;
     using trading::OrderSubmission;
 
+    using trading::binance::OrderResponse;
+    using trading::binance::CancelResponse;
+    using trading::binance::BalancesResponse;
     using trading::binance::AssetBalance;
     using trading::binance::BinanceApiError;
     using trading::binance::BinanceApiErrorCode;
-    using trading::binance::BinanceSpotClient;
     using trading::binance::OrderCancellation;
+    using trading::binance::spot_client_asynch::BinanceSpotClient;
 
     constexpr std::string_view OrderEndpoint = "/api/v3/order";
     constexpr std::string_view AccountEndpoint = "/api/v3/account";
-
-    [[nodiscard]]
-    std::uint64_t unixTimestampMilliseconds() noexcept
-    {
-        const auto duration = std::chrono::system_clock::now().time_since_epoch();
-
-        return static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(duration).count()
-        );
-    }
 
     [[nodiscard]]
     std::string toDecimalString(const std::int64_t value, const int decimalPlaces)
@@ -203,11 +196,13 @@ namespace
             query += std::format("&price={}&timeInForce=GTC",toString(request.price));
         }
 
+        std::cout << query << std::endl;
+
         return query;
     }
 
     [[nodiscard]]
-    BinanceSpotClient::OrderResponse parseOrderResponse(const networking::HttpResponse& response,
+    OrderResponse parseOrderResponse(const networking::HttpResponse& response,
                                                         const OrderId clientOrderId)
     {
         simdjson::dom::parser parser;
@@ -255,7 +250,7 @@ namespace
     }
 
     [[nodiscard]]
-    BinanceSpotClient::CancelResponse parseCancelResponse(const networking::HttpResponse& response)
+    CancelResponse parseCancelResponse(const networking::HttpResponse& response)
     {
         simdjson::dom::parser parser;
         simdjson::dom::element json;
@@ -292,20 +287,20 @@ namespace
             };
         }
 
-        const std::optional<OrderStatus> orderStatus = trading::toOrderStatus(status);
-        if (!orderStatus) {
+        const OrderStatus orderStatus = trading::toOrderStatus(status);
+        /*if (!orderStatus) {
             return std::unexpected {makeError(BinanceApiErrorCode::InvalidResponse,
                 std::format("Unknown Binance order status: {}", status))};
-        }
+        }*/
 
         return OrderCancellation {
             .exchangeOrderId = exchangeOrderId,
-            .status = *orderStatus
+            .status = orderStatus
         };
     }
 
     [[nodiscard]]
-    BinanceSpotClient::BalancesResponse parseBalancesResponse(const networking::HttpResponse& response)
+    BalancesResponse parseBalancesResponse(const networking::HttpResponse& response)
     {
         simdjson::dom::parser parser;
         simdjson::dom::element json;
@@ -377,7 +372,7 @@ namespace trading::binance
     }
 
     void BinanceSpotClient::asyncSignedRequest(const boost::beast::http::verb method,
-                                               std::string endpoint,
+                                               std::string_view endpoint,
                                                std::string query,
                                                ApiResponseHandler handler)
     {
@@ -393,7 +388,9 @@ namespace trading::binance
             query += '&';
         }
 
-        query += std::format("recvWindow={}&timestamp={}", recvWindow, unixTimestampMilliseconds());
+        query += std::format("recvWindow={}&timestamp={}", recvWindow, utilities::unixTimestampMilliseconds());
+
+        std::cout << query << std::endl;
         const std::string signature = createSignature(query, credentials.secretKey);
 
         if (signature.empty()) {
@@ -446,9 +443,7 @@ namespace trading::binance
 
         const std::string query = createOrderQuery(request, clientOrderId, symbol);
 
-        asyncSignedRequest(boost::beast::http::verb::post,
-            std::string { OrderEndpoint },
-            query,
+        asyncSignedRequest(boost::beast::http::verb::post, OrderEndpoint ,query,
             [handler = std::move(handler), clientOrderId](ApiResponse response) mutable
             {
                 if (!response) {
@@ -476,9 +471,7 @@ namespace trading::binance
             exchangeOrderId
         );
 
-        asyncSignedRequest(boost::beast::http::verb::delete_,
-            std::string { OrderEndpoint },
-            query,
+        asyncSignedRequest(boost::beast::http::verb::delete_,OrderEndpoint,query,
             [handler = std::move(handler)](ApiResponse response) mutable
             {
                 if (!response) {
@@ -496,9 +489,7 @@ namespace trading::binance
             return;
         }
 
-        asyncSignedRequest(boost::beast::http::verb::get,
-            std::string { AccountEndpoint },
-            {},
+        asyncSignedRequest(boost::beast::http::verb::get, AccountEndpoint ,{},
             [handler = std::move(handler)](ApiResponse response) mutable
             {
                 if (!response) {

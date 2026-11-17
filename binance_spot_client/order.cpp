@@ -45,6 +45,6 @@ namespace trading
         if (status == "REJECTED"sv) {
             return OrderStatus::Rejected;
         }
-        return OrderStatus::New;
+        return OrderStatus::Unknown;
     }
 }

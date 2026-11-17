@@ -8,6 +8,7 @@ Description : utilities.cpp
 ============================================================================**/
 
 #include "utilities.hpp"
+#include <chrono>
 
 namespace
 {
@@ -48,6 +49,33 @@ namespace utilities
         for (const unsigned char value : data) {
             result.push_back(HexDigits[value >> 4]);
             result.push_back(HexDigits[value & 0x0F]);
+        }
+        return result;
+    }
+
+    int64_t unixTimestampMilliseconds()
+    {
+        using namespace std::chrono;
+        return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    }
+
+    [[nodiscard]]
+    std::string escapeJsonString(const std::string_view value)
+    {
+        std::string result;
+        result.reserve(value.size());
+        for (const char ch : value)
+        {
+            switch (ch) {
+                case '"':  result += "\\\""; break;
+                case '\\': result += "\\\\"; break;
+                case '\b': result += "\\b";  break;
+                case '\f': result += "\\f";  break;
+                case '\n': result += "\\n";  break;
+                case '\r': result += "\\r";  break;
+                case '\t': result += "\\t";  break;
+                default:   result += ch;    break;
+            }
         }
         return result;
     }

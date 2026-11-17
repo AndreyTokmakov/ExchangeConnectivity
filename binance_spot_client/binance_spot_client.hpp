@@ -12,55 +12,16 @@ Description : binance_spot_client.hpp
 
 #include "order.hpp"
 #include "rest_client.hpp"
+#include "binance_api.hpp"
 
 #include <expected>
 #include <functional>
-#include <utility>
 
-namespace trading::binance
+namespace trading::binance::spot_client_asynch
 {
-    struct ApiCredentials
-    {
-        std::string apiKey;
-        std::string secretKey;
-    };
-
-    enum class BinanceApiErrorCode : std::uint8_t
-    {
-        InvalidRequest,
-        SigningFailed,
-        TransportError,
-        ExchangeRejected,
-        InvalidResponse
-    };
-
-    struct BinanceApiError
-    {
-        BinanceApiErrorCode code { BinanceApiErrorCode::InvalidResponse };
-        std::int64_t exchangeErrorCode { 0 };
-        std::string message;
-    };
-
-    struct OrderCancellation
-    {
-        ExchangeOrderId exchangeOrderId { 0 };
-        OrderStatus status { OrderStatus::New };
-    };
-
-    struct AssetBalance
-    {
-        std::string asset;
-        std::string free;
-        std::string locked;
-    };
-
     class BinanceSpotClient
     {
     public:
-        using OrderResponse = std::expected<OrderSubmission, BinanceApiError>;
-        using CancelResponse = std::expected<OrderCancellation, BinanceApiError>;
-        using BalancesResponse = std::expected<std::vector<AssetBalance>, BinanceApiError>;
-
         using OrderHandler = std::function<void(OrderResponse)>;
         using CancelHandler = std::function<void(CancelResponse)>;
         using BalancesHandler = std::function<void(BalancesResponse)>;
@@ -90,7 +51,7 @@ namespace trading::binance
         using ApiResponseHandler = std::function<void(ApiResponse)>;
 
         void asyncSignedRequest(boost::beast::http::verb method,
-                                std::string endpoint,
+                                std::string_view,
                                 std::string query,
                                 ApiResponseHandler handler);
 

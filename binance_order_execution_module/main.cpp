@@ -10,6 +10,7 @@ Description : Binance
 #include <string_view>
 #include <vector>
 #include <iostream>
+#include <format>
 
 #include "networking/web_socket_client.hpp"
 #include "networking/rest_client.hpp"
@@ -32,33 +33,19 @@ namespace
         std::string secretKey;
     };
 
-    [[nodiscard]]
-    std::int64_t getCurrentTimestamp()
-    {
-        using namespace std::chrono;
-        return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    std::optional<std::string> getEnvironmentVariable(const std::string_view variable) {
+        if (const char* env_p = std::getenv(variable.data()))
+            return env_p;
+        return std::nullopt;
     }
 
     [[nodiscard]]
-    std::string escapeJsonString(const std::string_view value)
+    std::optional<ApiCredentials> loadApiCredentials()
     {
-        std::string result;
-        result.reserve(value.size());
-
-        for (const char ch : value) {
-            switch (ch) {
-                case '"':  result += "\\\""; break;
-                case '\\': result += "\\\\"; break;
-                case '\b': result += "\\b";  break;
-                case '\f': result += "\\f";  break;
-                case '\n': result += "\\n";  break;
-                case '\r': result += "\\r";  break;
-                case '\t': result += "\\t";  break;
-                default:   result += ch;    break;
-            }
-        }
-
-        return result;
+        return ApiCredentials {
+            .apiKey = getEnvironmentVariable("BINANCE_API_KEY").value_or(""),
+            .secretKey = getEnvironmentVariable("BINANCE_SECRET_KEY").value_or("")
+        };
     }
 
     std::optional<std::string> createSignature(const std::string_view payload,
@@ -83,20 +70,6 @@ namespace
         return utilities::toHex(std::span { digest.data(), digestLength });
     }
 
-    std::optional<std::string> getEnvironmentVariable(const std::string_view variable) {
-        if (const char* env_p = std::getenv(variable.data()))
-            return env_p;
-        return std::nullopt;
-    }
-
-    [[nodiscard]]
-    std::optional<ApiCredentials> loadApiCredentials()
-    {
-        return ApiCredentials {
-            .apiKey = getEnvironmentVariable("BINANCE_API_KEY").value_or(""),
-            .secretKey = getEnvironmentVariable("BINANCE_SECRET_KEY").value_or("")
-        };
-    }
 }
 
 namespace binance
@@ -144,9 +117,13 @@ namespace binance
                                                  boost::asio::ssl::context& sslContext,
                                                  std::string apiKey,
                                                  std::string secretKey):
-        apiKey(std::move(apiKey)),
-        secretKey(std::move(secretKey)),
-        webSocketClient(ioContext, sslContext, std::string { Host }, std::string { Port }, std::string { Target })
+        apiKey { std::move(apiKey) },
+        secretKey { std::move(secretKey) },
+        webSocketClient { ioContext,
+                          sslContext,
+                          std::string { Host },
+                          std::string { Port },
+                          std::string { Target } }
     {
     }
 
@@ -179,28 +156,21 @@ namespace binance
 
     std::optional<std::string> BinanceUserDataStream::createSubscribeRequest() const
     {
-        const std::int64_t timestamp = getCurrentTimestamp();
+        const std::int64_t timestamp = utilities::unixTimestampMilliseconds();
 
         // Binance requires parameters to be sorted alphabetically when calculating the signature.
-        const std::string payload =
-            "apiKey=" + apiKey +
-            "&recvWindow=" + std::to_string(RecvWindow) +
-            "&timestamp=" + std::to_string(timestamp);
-
+        const std::string payload = std::format("apiKey={}&recvWindow={}&timestamp={}", apiKey , RecvWindow, timestamp);
         const std::optional<std::string> signature = createSignature(payload, secretKey);
         if (!signature.has_value()) {
             return std::nullopt;
         }
 
-        std::string request =
-            R"({"id":"1","method":"userDataStream.subscribe.signature","params":{)"
-            R"("apiKey":")" + escapeJsonString(apiKey) +
-            R"(","recvWindow":)" + std::to_string(RecvWindow) +
-            R"(,"timestamp":)" + std::to_string(timestamp) +
-            R"(,"signature":")" + *signature +
-            R"("}})";
-
-        return request;
+        return R"({"id":"1","method":"userDataStream.subscribe.signature","params":{)"
+               R"("apiKey":")" + utilities::escapeJsonString(apiKey) +
+               R"(","recvWindow":)" + std::to_string(RecvWindow) +
+               R"(,"timestamp":)" + std::to_string(timestamp) +
+               R"(,"signature":")" + *signature +
+               R"("}})";
     }
 }
 
