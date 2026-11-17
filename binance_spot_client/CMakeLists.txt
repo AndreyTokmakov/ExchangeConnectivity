@@ -12,8 +12,6 @@ add_executable(${PROJECT_NAME}
         rest_client.cpp
         rest_client.hpp
         binance_api.hpp
-        binance_spot_client.cpp
-        binance_spot_client.hpp
         binance_spot_client_sync.cpp
         binance_spot_client_sync.hpp
         utilities.hpp

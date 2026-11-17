@@ -14,6 +14,7 @@ Description : Binance
 #include <utility>
 #include <vector>
 #include <filesystem>
+#include <thread>
 
 #include "rest_client.hpp"
 
@@ -64,16 +65,16 @@ namespace
             endpoint { std::move(endpoint) },
             ioContext { 1 },
             sslContext { boost::asio::ssl::context::tls_client },
-            restClient { ioContext, sslContext }
+            workGuard { ioContext.get_executor() },
+            restClient { ioContext, sslContext },
+            executorThread { [this] { ioContext.run(); } }
         {
+
         }
 
         [[nodiscard]]
-        bool sendRequest()
+        bool sendRequestAsync()
         {
-            if (ioContext.stopped())
-                ioContext.restart();
-
             networking::HttpRequest request;
             request.host = endpoint;
             request.target = "/api/v3/depth?symbol=" + urlEncode("BTCUSDT") + "&limit=1000";
@@ -94,25 +95,44 @@ namespace
                 }*/
             });
 
-            ioContext.run();
+            return true;
+        }
+
+        [[nodiscard]]
+        bool sendRequest()
+        {
+            networking::HttpRequest request;
+            request.host = endpoint;
+            request.target = "/api/v3/depth?symbol=" + urlEncode("BTCUSDT") + "&limit=1000";
+            request.method = http::verb::get;
+
+            const auto response  = restClient.request(request);
+            std::cout << response.value().body << std::endl;
 
             return true;
         }
 
     private:
+        using WorkGuard = asio::executor_work_guard<asio::io_context::executor_type>;
+
         std::string endpoint;
         asio::io_context ioContext;
         ssl::context sslContext;
+        WorkGuard workGuard;
         networking::RestClient restClient;
+        std::jthread executorThread;
     };
 
     void run()
     {
         TestRestClient client {  "testnet.binance.vision" };
-        for (int i = 0; i < 1; ++i) {
+        for (int i = 0; i < 3; ++i) {
             std::cout << std::string(140, '=') << std::endl;
             const auto _ = client.sendRequest();
+            // const auto _ = client.sendRequestAsync();
+            std::cout << std::string(140, '=') << std::endl;
         }
+
     }
 }
 

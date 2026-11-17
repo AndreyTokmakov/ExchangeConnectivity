@@ -74,6 +74,9 @@ namespace trading::networking
         RestClient(const RestClient&) = delete;
         RestClient& operator=(const RestClient&) = delete;
 
+        [[nodiscard]]
+        Response request(HttpRequest request) const;
+
         void asyncRequest(HttpRequest& request, ResponseHandler handler) const;
 
     private:
